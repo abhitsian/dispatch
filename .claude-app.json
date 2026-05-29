@@ -1,0 +1,7 @@
+{
+  "name": "Dispatch",
+  "type": "python",
+  "entry": "app.py",
+  "install": ".venv/bin/pip install -r requirements.txt",
+  "description": "Police-radio menu bar app for talking with Claude agents over voice. Press the mic to transmit; agents respond with radio-filtered audio."
+}

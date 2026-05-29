@@ -1,0 +1,14 @@
+# Runtime dependencies
+rumps>=0.4
+sounddevice>=0.4
+numpy>=1.26
+pyobjc-framework-WebKit>=10.0
+Pillow>=10.0
+
+# Optional fast-path: Apple Silicon GPU/Neural Engine transcription.
+# Bundle excludes it (py2app static walker chokes on mlx). Source-tree runs
+# pick it up automatically when installed.
+mlx-whisper>=0.4
+
+# Build (only needed for `python setup.py py2app` to make a real .app bundle)
+py2app>=0.28

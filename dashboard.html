@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dispatch</title>
+<meta name="viewport" content="width=900,initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #161a22;
+    --panel-2: #1c2230;
+    --line: #262d3b;
+    --text: #e6e9ef;
+    --dim: #98a0ad;
+    --accent: #6aa9ff;
+    --ok: #4ec9a4;
+    --warn: #f0b95b;
+    --danger: #f06464;
+    --pulse-red: #f06464;
+    --pulse-green: #4ec9a4;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+               font-family: -apple-system, "SF Pro Text", system-ui, sans-serif; font-size: 14px; }
+  header { padding: 14px 22px; border-bottom: 1px solid var(--line);
+           display: flex; align-items: center; gap: 14px; background: var(--panel); position: sticky; top: 0; z-index: 10; }
+  header h1 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: .3px; }
+  header .status { font-size: 12px; color: var(--dim); margin-left: auto; display:flex; gap:14px; align-items:center; }
+  header .pill { padding: 3px 8px; border-radius: 10px; background: var(--panel-2);
+                 font-variant-numeric: tabular-nums; }
+  main { display: grid; grid-template-columns: 1.4fr 1fr; gap: 0; min-height: calc(100vh - 50px); }
+  section { padding: 18px 22px; border-right: 1px solid var(--line); }
+  section + section { border-right: none; }
+  h2 { font-size: 12px; text-transform: uppercase; color: var(--dim); letter-spacing: .8px;
+       margin: 4px 0 14px 0; font-weight: 600; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+          padding: 12px 14px; margin-bottom: 10px; }
+  .card.alert { border-color: #5a2b2b; background: linear-gradient(180deg, #2a1818 0%, #1a1212 100%); }
+  .card.complete { border-color: #2a4a3c; background: linear-gradient(180deg, #122520 0%, #11201c 100%); }
+  .card.elevated { border-color: #2f3a55; }
+  .card .head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+  .card .head .cs { font-weight: 600; font-size: 13.5px; }
+  .card .head .proj { color: var(--dim); font-size: 12px; }
+  .card .head .badge { margin-left: auto; font-size: 11px; padding: 2px 7px; border-radius: 8px;
+                       background: var(--panel-2); color: var(--dim); }
+  .card .head .badge.live { color: var(--ok); }
+  .card .head .badge.alert { color: var(--danger); }
+  .card .head .badge.complete { color: var(--ok); }
+  .card .title { color: var(--text); font-size: 13px; margin-bottom: 4px; }
+  .card .quote { color: var(--dim); font-size: 12.5px; font-style: italic;
+                 padding: 6px 10px; border-left: 2px solid var(--line); margin: 6px 0 10px 0; }
+  .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  button { background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
+           padding: 6px 11px; border-radius: 7px; cursor: pointer; font-size: 12.5px;
+           font-family: inherit; }
+  button:hover { background: #232b3a; }
+  button.primary { background: #1d3d70; border-color: #2a4f8a; }
+  button.danger { background: #5e2929; border-color: #7a3737; }
+  button.ok { background: #1f4838; border-color: #2c5c48; }
+  button.ghost { background: transparent; }
+  button.big { padding: 10px 16px; font-size: 13.5px; font-weight: 600; }
+  .stack-bar { background: linear-gradient(90deg, #3a1e1e 0%, #2a1818 100%);
+               border: 1px solid #5a2b2b; padding: 14px 16px; border-radius: 10px;
+               display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+  .stack-bar .lbl { font-weight: 600; font-size: 14px; }
+  .stack-bar .count { color: var(--dim); font-size: 12px; }
+  .log { font-family: ui-monospace, SF Mono, Menlo, monospace; font-size: 11.5px;
+         color: var(--dim); white-space: pre-wrap; line-height: 1.5; max-height: 50vh; overflow-y: auto;
+         background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+  .log .self { color: var(--accent); }
+  .log .sys { color: var(--dim); }
+  .log .hook { color: var(--warn); }
+  .log .agent { color: var(--text); }
+  .empty { color: var(--dim); font-size: 12.5px; padding: 16px 0; }
+  .toolbar { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+  .toolbar button { font-size: 12px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px;
+         background: var(--dim); vertical-align: middle; }
+  .dot.alert { background: var(--danger); animation: pulse 1.4s infinite; }
+  .dot.complete { background: var(--ok); animation: pulse 1.4s infinite; }
+  .dot.elev { background: var(--accent); }
+  .dot.muted { background: var(--dim); opacity: 0.5; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+  textarea { width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+             border-radius: 7px; padding: 8px 10px; font: inherit; resize: vertical; min-height: 40px; }
+  select { background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+           border-radius: 6px; padding: 6px 9px; font: inherit; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  details summary { cursor: pointer; color: var(--dim); font-size: 12px; }
+  .ts { color: var(--dim); font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🛰  Dispatch</h1>
+  <div class="status">
+    <span class="pill" id="pill-units">… units</span>
+    <span class="pill" id="pill-pending">… pending</span>
+    <span class="pill" id="pill-complete">… complete</span>
+    <span class="pill" id="pill-channel">channel: …</span>
+  </div>
+</header>
+<main>
+  <section>
+    <div id="stack-zone"></div>
+    <div class="toolbar">
+      <button id="btn-talk-all" class="primary">🎙 Talk to ALL units (voice)</button>
+      <button id="btn-status-check">📊 Status check</button>
+      <button id="btn-mute-channel">🔇 Channel</button>
+      <button id="btn-mute-all-units">🔇 Mute all</button>
+      <button id="btn-test-hook" class="ghost">🧪 Test hook</button>
+      <button id="btn-test-complete" class="ghost">🧪 Test complete</button>
+      <button id="btn-test-awaiting" class="ghost">🧪 Test awaiting</button>
+    </div>
+    <h2>Roster</h2>
+    <div id="roster"></div>
+  </section>
+  <section>
+    <h2>Channel log</h2>
+    <div id="log" class="log"></div>
+  </section>
+</main>
+<script>
+const $ = sel => document.querySelector(sel);
+let state = null;
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, { method: opts.method || 'GET',
+                                headers: opts.body ? { 'Content-Type':'application/json' } : {},
+                                body: opts.body ? JSON.stringify(opts.body) : undefined });
+  if (!r.ok) throw new Error(`${path} ${r.status}`);
+  const ct = r.headers.get('content-type') || '';
+  return ct.includes('json') ? r.json() : r.text();
+}
+
+function fmtTime(ts) {
+  const d = new Date(ts * 1000);
+  return d.toTimeString().slice(0, 8);
+}
+
+function btn(action, arg, label, klass='') {
+  const cls = klass ? ` class="${klass}"` : '';
+  return `<button${cls} data-action="${action}" data-arg="${esc(arg || '')}">${label}</button>`;
+}
+
+function renderRoster(s) {
+  const root = $('#roster');
+  const r = s.roster || [];
+  if (!r.length) {
+    root.innerHTML = '<div class="empty">No live claude sessions. Open a terminal and run <code>claude</code>.</div>';
+    return;
+  }
+  root.innerHTML = r.map(u => {
+    const cls = ['card'];
+    let dot = '<span class="dot"></span>';
+    let badge = '';
+    let quote = '';
+    let actions = '';
+    if (u.hook_pending) {
+      cls.push('alert');
+      dot = '<span class="dot alert"></span>';
+      badge = '<span class="badge alert">hook</span>';
+      quote = `<div class="quote">wants to: ${esc(u.hook_pending.tool_summary)}</div>`;
+      actions += btn('grant_hook', u.hook_pending.id, '✅ Allow', 'ok');
+      actions += btn('deny_hook', u.hook_pending.id, '⛔ Deny', 'danger');
+    } else if (u.pending) {
+      cls.push('alert');
+      dot = '<span class="dot alert"></span>';
+      badge = '<span class="badge alert">permission</span>';
+      quote = `<div class="quote">${esc(u.pending.text)}</div>`;
+      actions += btn('grant_unit', u.callsign, '✅ Grant', 'ok');
+      actions += btn('deny_unit', u.callsign, '⛔ Deny', 'danger');
+    } else if (u.awaiting) {
+      cls.push('alert');
+      dot = '<span class="dot alert"></span>';
+      badge = '<span class="badge alert">question</span>';
+      quote = `<div class="quote">${esc(u.awaiting.question)}</div>`;
+      actions += btn('dismiss_awaiting', u.callsign, '✓ Mark read');
+    } else if (u.completed) {
+      cls.push('complete');
+      dot = '<span class="dot complete"></span>';
+      badge = '<span class="badge complete">done</span>';
+      quote = `<div class="quote">${esc(u.completed)}</div>`;
+      actions += btn('dismiss_complete', u.callsign, '✓ Acknowledge');
+    }
+    if (u.elevated) { cls.push('elevated'); badge = '<span class="badge">🔓 elevated</span>' + badge; }
+    if (u.muted) { dot = '<span class="dot muted"></span>'; }
+
+    actions += btn('voice_to', u.callsign, '🎙 Voice', 'primary');
+    actions += `<button data-action="prompt_transmit" data-arg="${esc(u.callsign)}">💬 Text</button>`;
+    actions += btn('toggle_elevated', u.callsign, u.elevated ? '🔒 Revoke elevation' : '🔓 Elevate', 'ghost');
+    actions += btn('toggle_mute_unit', u.callsign, u.muted ? '🔊 Unmute' : '🔇 Mute', 'ghost');
+
+    return `
+      <div class="${cls.join(' ')}">
+        <div class="head">
+          ${dot}
+          <span class="cs">${u.callsign}</span>
+          <span class="proj">· ${esc(u.project_label)} · pid ${u.pid}</span>
+          ${badge}
+        </div>
+        <div class="title">${esc(u.title)}</div>
+        ${quote}
+        <div class="actions">${actions}</div>
+      </div>`;
+  }).join('');
+}
+
+function renderStack(s) {
+  const root = $('#stack-zone');
+  const pc = s.permission_count || 0;
+  if (pc < 2) { root.innerHTML = ''; return; }
+  root.innerHTML = `
+    <div class="stack-bar">
+      <div>
+        <div class="lbl">🚨 ${pc} permission asks backed up</div>
+        <div class="count">resolve all in one shot</div>
+      </div>
+      <div class="actions" style="margin-left:auto;">
+        <button class="ok big" data-action="grant_all">✅ ALLOW ALL</button>
+        <button class="danger big" data-action="deny_all">⛔ DENY ALL</button>
+      </div>
+    </div>`;
+}
+
+function renderHeader(s) {
+  $('#pill-units').textContent = `${s.roster.length} units`;
+  $('#pill-pending').textContent = `${s.alert_count} alert${s.alert_count===1?'':'s'}`;
+  $('#pill-complete').textContent = `${s.complete_count} done`;
+  $('#pill-channel').textContent =
+    s.channel.busy ? `channel: ▶ ${s.channel.label}` :
+    s.channel.queue ? `channel: ${s.channel.queue} queued` :
+    s.channel.muted ? `channel: muted` : 'channel: idle';
+
+  // Reflect current mute states in the toolbar buttons.
+  const allMuted = s.roster.length > 0 && s.roster.every(u => u.muted);
+  $('#btn-mute-all-units').textContent = allMuted ? '🔊 Unmute all units' : '🔇 Mute all units';
+  $('#btn-mute-all-units').classList.toggle('primary', allMuted);
+  $('#btn-mute-channel').textContent = s.channel.muted ? '🔊 Unmute channel' : '🔇 Mute channel';
+  $('#btn-mute-channel').classList.toggle('primary', s.channel.muted);
+}
+
+function renderLog(s) {
+  const lines = (s.log || []).slice(-100).map(t => {
+    const cls = t.speaker.includes('DISPATCH (you')
+              ? 'self'
+              : t.speaker.includes('DISPATCH (system')
+              ? 'sys'
+              : t.text.startsWith('[hook]') ? 'hook' : 'agent';
+    return `<div class="${cls}"><span class="ts">${fmtTime(t.ts)}</span>  ${esc(t.speaker)}: ${esc(t.text)}</div>`;
+  });
+  const log = $('#log');
+  const wasAtBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+  log.innerHTML = lines.join('');
+  if (wasAtBottom) log.scrollTop = log.scrollHeight;
+}
+
+function esc(s) {
+  return String(s || '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+
+async function refresh() {
+  try {
+    state = await api('/state');
+    renderHeader(state);
+    renderStack(state);
+    renderRoster(state);
+    renderLog(state);
+  } catch (e) {
+    $('#pill-channel').textContent = 'disconnected';
+  }
+}
+
+async function act(action, arg) {
+  try {
+    const url = `/api/${action}` + (arg ? `/${encodeURIComponent(arg)}` : '');
+    await api(url, { method: 'POST' });
+    refresh();
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+async function promptTransmit(cs) {
+  const msg = prompt(`Transmit to ${cs}:`);
+  if (!msg) return;
+  await api('/api/transmit', { method: 'POST', body: { callsign: cs, message: msg } });
+  refresh();
+}
+
+// JS-ready marker in the title — if you see this, the new JS loaded.
+document.title = 'Dispatch • JS v3 ready';
+
+// Delegated click handler — every button with a data-action attribute is wired.
+// The title bar updates on every step so we can see exactly where it fails.
+document.addEventListener('click', async (e) => {
+  const b = e.target.closest('button[data-action]');
+  if (!b) {
+    document.title = 'Dispatch • click ignored (' + e.target.tagName + ')';
+    return;
+  }
+  const action = b.dataset.action;
+  const arg = b.dataset.arg || '';
+  document.title = 'Dispatch • ' + action + (arg ? ':' + arg.slice(0, 10) : '') + ' →';
+  // visible feedback so a stuck click is obvious
+  const old = b.style.opacity;
+  b.style.opacity = '0.4';
+  b.style.border = '2px solid #ff8c5b';
+  try {
+    if (action === 'prompt_transmit') {
+      const msg = prompt(`Transmit to ${arg}:`);
+      if (msg) {
+        const r = await api('/api/transmit', { method: 'POST', body: { callsign: arg, message: msg } });
+        document.title = 'Dispatch • transmit ok';
+        refresh();
+      }
+    } else {
+      const r = await act(action, arg);
+      document.title = 'Dispatch • ' + action + ' ✓';
+    }
+  } catch (err) {
+    document.title = 'Dispatch • ERROR: ' + (err.message || err);
+    alert('Action failed: ' + (err.message || err));
+  } finally {
+    setTimeout(() => {
+      b.style.opacity = old || '';
+      b.style.border = '';
+    }, 250);
+  }
+});
+
+// Top-bar toolbar wiring (same delegation system — these have data-action now)
+$('#btn-talk-all').dataset.action = 'voice_to_all';
+$('#btn-status-check').dataset.action = 'status_check';
+$('#btn-mute-channel').dataset.action = 'toggle_channel_mute';
+$('#btn-mute-all-units').dataset.action = 'toggle_mute_all_units';
+$('#btn-test-hook').dataset.action = 'test_hook';
+$('#btn-test-complete').dataset.action = 'test_complete';
+$('#btn-test-awaiting').dataset.action = 'test_awaiting';
+
+setInterval(refresh, 1000);
+refresh();
+</script>
+</body>
+</html>

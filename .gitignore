@@ -1,0 +1,26 @@
+# Build artifacts
+build/
+dist/
+*.pyc
+__pycache__/
+*.egg-info/
+
+# Virtual env
+.venv/
+venv/
+
+# Runtime / user data (lives in ~/Library/... at runtime; only shows up here if
+# you've also run from the source tree)
+logs/
+voice/
+
+# Generated icon iconset (rebuilt via `python make_icon.py`)
+Dispatch.iconset/
+
+# macOS noise
+.DS_Store
+
+# Editor scratch
+*.swp
+.idea/
+.vscode/
