@@ -43,6 +43,8 @@
   .card.elevated { border-color: #2f3a55; }
   .card .head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
   .card .head .cs { font-weight: 600; font-size: 13.5px; }
+  .card .head .cs .sn { font-weight: 500; color: var(--accent); font-size: 13px; }
+  .card .vibe { font-size: 11.5px; color: var(--dim); font-style: italic; margin: 4px 0 6px 0; }
   .card .head .proj { color: var(--dim); font-size: 12px; }
   .card .head .badge { margin-left: auto; font-size: 11px; padding: 2px 7px; border-radius: 8px;
                        background: var(--panel-2); color: var(--dim); }
@@ -111,9 +113,6 @@
       <button id="btn-status-check">📊 Status check</button>
       <button id="btn-mute-channel">🔇 Channel</button>
       <button id="btn-mute-all-units">🔇 Mute all</button>
-      <button id="btn-test-hook" class="ghost">🧪 Test hook</button>
-      <button id="btn-test-complete" class="ghost">🧪 Test complete</button>
-      <button id="btn-test-awaiting" class="ghost">🧪 Test awaiting</button>
     </div>
     <h2>Roster</h2>
     <div id="roster"></div>
@@ -194,11 +193,12 @@ function renderRoster(s) {
     actions += btn('toggle_elevated', u.callsign, u.elevated ? '🔒 Revoke elevation' : '🔓 Elevate', 'ghost');
     actions += btn('toggle_mute_unit', u.callsign, u.muted ? '🔊 Unmute' : '🔇 Mute', 'ghost');
 
+    const shortName = u.short_label ? ` · ${esc(u.short_label)}` : '';
     return `
       <div class="${cls.join(' ')}">
         <div class="head">
           ${dot}
-          <span class="cs">${u.callsign}</span>
+          <span class="cs">${u.callsign}<span class="sn">${shortName}</span></span>
           <span class="proj">· ${esc(u.project_label)} · pid ${u.pid}</span>
           ${badge}
         </div>
@@ -337,9 +337,6 @@ $('#btn-talk-all').dataset.action = 'voice_to_all';
 $('#btn-status-check').dataset.action = 'status_check';
 $('#btn-mute-channel').dataset.action = 'toggle_channel_mute';
 $('#btn-mute-all-units').dataset.action = 'toggle_mute_all_units';
-$('#btn-test-hook').dataset.action = 'test_hook';
-$('#btn-test-complete').dataset.action = 'test_complete';
-$('#btn-test-awaiting').dataset.action = 'test_awaiting';
 
 setInterval(refresh, 1000);
 refresh();

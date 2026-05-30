@@ -124,9 +124,44 @@ class Dispatch:
         self._roster: dict[str, Agent] = {}
         self._roster_ts: float = 0.0
 
+        # Seed the in-memory log from the on-disk channel.log so the dashboard
+        # and menu show recent history right after a restart (not blank).
+        self._seed_log_from_disk()
+
         self._stop = threading.Event()
         self._poller = threading.Thread(target=self._poll_loop, daemon=True)
         self._poller.start()
+
+    def _seed_log_from_disk(self, max_lines: int = 80):
+        """Read the last `max_lines` from channel.log and convert them back
+        into Transmission entries so the UI isn't empty after restart."""
+        if not LOG_FILE.exists():
+            return
+        try:
+            with open(LOG_FILE, "r", encoding="utf-8", errors="replace") as f:
+                lines = f.readlines()
+        except OSError:
+            return
+        now = time.time()
+        # `[HH:MM:SS] speaker: text` — keep the original timestamp HH:MM:SS but
+        # anchor today's date so the UI sorts/orders correctly.
+        ts_re = re.compile(r"^\[(\d{2}):(\d{2}):(\d{2})\]\s+([^:]+):\s+(.*)$")
+        today0 = time.localtime(now)
+        today_base = time.mktime(time.struct_time(
+            (today0.tm_year, today0.tm_mon, today0.tm_mday, 0, 0, 0, 0, 0, -1)
+        ))
+        for raw in lines[-max_lines:]:
+            m = ts_re.match(raw.rstrip("\n"))
+            if not m:
+                continue
+            h, mi, s, speaker, text = m.groups()
+            ts = today_base + int(h) * 3600 + int(mi) * 60 + int(s)
+            # If the timestamp lands in the future we crossed midnight — back up
+            # one day so it still sorts before "now".
+            if ts > now:
+                ts -= 86400
+            self.state.log.append(Transmission(ts=ts, speaker=speaker.strip(),
+                                                 text=text.strip()))
 
     # ---------- log ----------
     def _add(self, speaker: str, text: str):
@@ -354,7 +389,7 @@ class Dispatch:
             )
 
         if not self.is_unit_muted(agent.callsign):
-            CHANNEL.enqueue_tx(reply, agent.callsign,
+            CHANNEL.enqueue_tx(reply, agent.callsign, voice=agent.voice,
                                label=f"{agent.callsign}: reply")
 
     def _resolve_permission(self, pending: PendingPermission, decision: str):
@@ -434,8 +469,9 @@ class Dispatch:
         self.on_change()
         CHANNEL.enqueue_alert("awaiting input")
         CHANNEL.enqueue_tx(
-            f"{agent.callsign} needs your call, over.",
-            "DISPATCH", label=f"{agent.callsign}: needs call",
+            f"{agent.spoken_name} needs your call, over.",
+            agent.callsign, voice=agent.voice,
+            label=f"{agent.callsign}: needs call",
         )
 
     def _announce_complete(self, agent: Agent, summary: str):
@@ -446,8 +482,9 @@ class Dispatch:
         self.on_change()
         if not self.is_unit_muted(agent.callsign):
             CHANNEL.enqueue_tx(
-                f"{agent.callsign} complete, over.",
-                agent.callsign, label=f"{agent.callsign}: complete",
+                f"{agent.spoken_name} complete, over.",
+                agent.callsign, voice=agent.voice,
+                label=f"{agent.callsign}: complete",
             )
 
     # ---------- menu hooks ----------
@@ -617,13 +654,16 @@ class Dispatch:
 
         self._add(callsign, f"[hook] requesting {summary}")
         if not muted:
-            # User asked: don't read the whole tool call (it's usually garbled
-            # bash). Just a chirp + a short "<UNIT> needs authorization, over."
-            # The full detail is visible in the menu/dashboard for review.
+            spoken = agent.spoken_name if agent else callsign
+            # Use the UNIT's own voice — that's the whole point of per-unit
+            # personalities; DISPATCH voice was making every alert sound
+            # identical regardless of which unit asked.
+            unit_voice = agent.voice if agent else None
             CHANNEL.enqueue_alert("hook approval")
             CHANNEL.enqueue_tx(
-                f"{callsign} needs authorization, over.",
-                "DISPATCH", label=f"{callsign}: needs auth",
+                f"{spoken} needs authorization, over.",
+                callsign, voice=unit_voice,
+                label=f"{callsign}: needs auth",
             )
 
         # Block waiting for user decision (with timeout)

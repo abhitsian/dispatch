@@ -129,21 +129,6 @@ class DispatchApp(rumps.App):
         )
         self.settings_menu = rumps.MenuItem("⚙  Settings")
         self.settings_menu.add(self.hook_item)
-        # Test channel — synthetic triggers so you can experience each flow
-        # without waiting for a real session to ask.
-        self.test_menu = rumps.MenuItem("🧪  Test channel")
-        self.test_menu.add(rumps.MenuItem(
-            "▶  Simulate hook approval (Bash)",
-            callback=lambda _: self.dispatch.test_trigger_hook(),
-        ))
-        self.test_menu.add(rumps.MenuItem(
-            "▶  Simulate task complete",
-            callback=lambda _: self.dispatch.test_trigger_complete(),
-        ))
-        self.test_menu.add(rumps.MenuItem(
-            "▶  Simulate awaiting question",
-            callback=lambda _: self.dispatch.test_trigger_awaiting(),
-        ))
 
         self.roster_menu = rumps.MenuItem("Roster (live sessions)")
         self.log_menu = rumps.MenuItem("Channel log (last 8)")
@@ -274,9 +259,12 @@ class DispatchApp(rumps.App):
         # Hook approvals (Claude is literally blocked waiting). Titles include
         # a short req_id slice so multiple pending hooks for the same unit
         # don't collide in rumps's title-keyed dict.
+        roster_lookup = self.dispatch.roster()
         for req_id, hook in list(s.hook_pending.items()):
             tag = req_id[:6]
-            label = f"🚨 {hook.callsign} wants: {hook.tool_summary[:48]} [{tag}]"
+            ag = roster_lookup.get(hook.callsign)
+            unit_id = ag.display_label if ag else hook.callsign
+            label = f"🚨 {unit_id} wants: {hook.tool_summary[:42]} [{tag}]"
             row = rumps.MenuItem(label); row.set_callback(None)
             self.menu.add(row)
             self.menu.add(rumps.MenuItem(
@@ -344,7 +332,6 @@ class DispatchApp(rumps.App):
         self.menu.add(self.mute_item)
         self.menu.add(self.mute_all_units_item)
         self.menu.add(self.queue_item)
-        self.menu.add(self.test_menu)
         self.menu.add(self.settings_menu)
         self.menu.add(None)
         self.menu.add(self.roster_menu)
@@ -440,7 +427,11 @@ class DispatchApp(rumps.App):
         elif is_muted:
             flag = "🔇 "
 
-        label = f"{flag}{callsign}  ·  {agent.project_label}  ·  {agent.title}"
+        # Show the auto-derived short name prominently: "UNIT-3 · Add Memory"
+        # with the full title (Claude's ai-title) and project as secondary.
+        label = (
+            f"{flag}{agent.display_label}  ·  {agent.project_label}  ·  {agent.title}"
+        )
         submenu = rumps.MenuItem(label)
 
         # Preview line (hook > pending > awaiting > recent traffic)

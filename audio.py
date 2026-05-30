@@ -423,11 +423,12 @@ class RadioItem:
 
     kind:
       "alert"  — the 2-tone dispatch attention chirp
-      "tx"     — a spoken transmission (callsign + text)
+      "tx"     — a spoken transmission (text, optional explicit voice)
     """
     kind: str
     text: str = ""
     callsign: str = "DISPATCH"
+    voice: Optional[str] = None   # explicit macOS voice name; overrides callsign mapping
     label: str = ""   # short label for the queue display ("UNIT-3: status check")
 
 
@@ -490,8 +491,10 @@ class RadioChannel:
         self._on_change()
 
     # ----- enqueue API -----
-    def enqueue_tx(self, text: str, callsign: str = "DISPATCH", label: str = ""):
+    def enqueue_tx(self, text: str, callsign: str = "DISPATCH",
+                    voice: Optional[str] = None, label: str = ""):
         self._q.put(RadioItem(kind="tx", text=text, callsign=callsign,
+                              voice=voice,
                               label=label or f"{callsign}: {text[:40]}"))
         self._on_change()
 
@@ -511,7 +514,7 @@ class RadioChannel:
                     if item.kind == "alert":
                         play_alert()
                     elif item.kind == "tx":
-                        speak(item.text, item.callsign)
+                        speak(item.text, item.callsign, voice=item.voice)
             except Exception:
                 # never crash the playback thread; log to stderr via print
                 import traceback; traceback.print_exc()
@@ -525,15 +528,21 @@ class RadioChannel:
 CHANNEL = RadioChannel()
 
 
-def speak(text: str, callsign: str = "DISPATCH", *, blocking: bool = True):
+def speak(text: str, callsign: str = "DISPATCH", *, blocking: bool = True,
+          voice: str | None = None):
     """Speak `text` in the agent's voice with police-radio styling.
 
     Envelope: mic-key click  ->  filtered voice + under-static  ->  Motorola
     roger beep  ->  squelch tail. Output is a single 22.05 kHz mono WAV that
     plays through afplay.
+
+    `voice` (when supplied) is used directly — that's the path the dynamic
+    UNIT-N agents take. `callsign` is the legacy fallback that maps via
+    VOICE_MAP (kept so old hardcoded ALPHA/BRAVO/etc. still work).
     """
     _ensure_assets()
-    voice = VOICE_MAP.get(callsign.upper(), "Kathy")
+    if voice is None:
+        voice = VOICE_MAP.get(callsign.upper(), "Kathy")
     with tempfile.TemporaryDirectory() as td:
         raw = Path(td) / "raw.aiff"
         dry = Path(td) / "dry.wav"

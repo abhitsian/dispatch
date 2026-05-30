@@ -148,6 +148,10 @@ def _build_state_snapshot() -> dict:
         hook = _DISPATCH.hook_for_callsign(cs)
         unit = {
             "callsign": cs,
+            "short_label": agent.short_label,        # "Add Memory"
+            "display_label": agent.display_label,    # "UNIT-3 · Add Memory"
+            "voice": agent.voice,                    # "Ralph"
+            "voice_vibe": agent.voice_vibe,          # "Sam Elliott — …"
             "project_label": agent.project_label,
             "title": agent.title,
             "session_id": agent.session_id,
