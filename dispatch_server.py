@@ -15,6 +15,7 @@ import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import unquote
 
 from paths import RESOURCE_DIR
 import quota
@@ -140,11 +141,17 @@ class _Handler(BaseHTTPRequestHandler):
         if _DISPATCH is None:
             self._send_json(503, {"error": "dispatch not initialised"})
             return
-        # split off the optional /<arg>
+        # split off the optional /<arg>, then URL-decode each segment. The
+        # dashboard sends args like "m1_quota_meter:false" through
+        # encodeURIComponent, so the ':' arrives as %3A — without unquote the
+        # "name:true|false" parse fails and every toggle/dropdown silently
+        # no-ops (200 with ok:false), reverting the control on the next poll.
         if "/" in rest:
             action, arg = rest.split("/", 1)
         else:
             action, arg = rest, ""
+        action = unquote(action)
+        arg = unquote(arg)
 
         # body (for /api/transmit)
         body = {}
