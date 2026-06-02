@@ -40,9 +40,14 @@ WINDOW_7D_SEC = 7 * 24 * 60 * 60
 # the wall-hit feedback loop (record_wall_hit) tightens the ceiling toward
 # the value at which the user actually hit a limit.
 TIER_PRESETS = {
-    "pro": {"ceiling_5h": 1_500_000, "ceiling_7d": 25_000_000},
-    "max_5x": {"ceiling_5h": 3_000_000, "ceiling_7d": 100_000_000},
-    "max_20x": {"ceiling_5h": 5_000_000, "ceiling_7d": 400_000_000},
+    # Cost-equiv ceilings per rolling window. These are ESTIMATES — Anthropic
+    # doesn't publish exact subscription token limits — and self-correct via
+    # record_wall_hit() when the user actually hits a wall. Calibrated up from
+    # the original guesses after a real heavy session (deduped ~5.8M weighted
+    # over 5h with no rate-limit hit) showed the old 5M/5h was far too low.
+    "pro": {"ceiling_5h": 3_000_000, "ceiling_7d": 40_000_000},
+    "max_5x": {"ceiling_5h": 7_000_000, "ceiling_7d": 150_000_000},
+    "max_20x": {"ceiling_5h": 12_000_000, "ceiling_7d": 500_000_000},
 }
 
 DEFAULT_TIER = "max_20x"
@@ -100,6 +105,7 @@ class UsageSample:
     output_tokens: int
     cache_create_tokens: int
     cache_read_tokens: int
+    message_id: str = ""   # Anthropic message id — used to dedupe repeat JSONL lines
 
     def cost_equiv(self, weights: dict) -> int:
         return int(
@@ -269,6 +275,7 @@ def _extract_usage(line: dict, default_session_id: str) -> Optional[UsageSample]
         output_tokens=_safe_int(u.get("output_tokens")),
         cache_create_tokens=_safe_int(u.get("cache_creation_input_tokens")),
         cache_read_tokens=_safe_int(u.get("cache_read_input_tokens")),
+        message_id=str(m.get("id") or ""),
     )
 
 
@@ -345,9 +352,20 @@ class QuotaTracker:
         per_session: dict[str, int] = {}
         oldest_5h = now
 
+        # Dedupe by Anthropic message id: Claude Code writes the same assistant
+        # message to the JSONL on several lines (partial/final/tool-attached),
+        # each carrying the SAME usage block. Counting every line double-counts
+        # badly (~2.4x in practice) and pushes the meter into false EMERGENCY.
+        # First occurrence of each id wins; id-less samples always count.
+        seen_ids: set[str] = set()
+
         for s in self.samples:
             if s.ts < cut7:
                 continue
+            if s.message_id:
+                if s.message_id in seen_ids:
+                    continue
+                seen_ids.add(s.message_id)
             cost = s.cost_equiv(self.config)
             tokens_7d += cost
             if s.ts >= cut5:
