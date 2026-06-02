@@ -339,10 +339,9 @@ pipx install openai-whisper</code></pre>
 cd dispatch
 python3.13 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-.venv/bin/python make_icon.py
-.venv/bin/python -c "import sys; sys.setrecursionlimit(8000); import setuptools; sys.argv=['setup.py','py2app']; exec(open('setup.py').read())"
-cp -R dist/Dispatch.app /Applications/
+./make_app.sh
 open /Applications/Dispatch.app</code></pre>
+          <p style="margin-top:8px">The installed app is a thin launcher that runs this clone — so updating is just <code>git pull</code>, no rebuild. Re-run <code>./make_app.sh</code> only if the launcher or icon changes.</p>
         </div>
       </div>
       <div class="install-step">

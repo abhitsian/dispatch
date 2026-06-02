@@ -6,7 +6,10 @@
 set -euo pipefail
 
 APP_NAME="Dispatch"
-SOURCE_DIR="$HOME/claude-apps/dispatch"
+# Source dir = wherever this script lives (the git clone). Derived, not
+# hardcoded, so the bundle works no matter where the repo is cloned — the
+# launcher execs THIS clone, so `git pull` is all it takes to be on latest.
+SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_ROOT="${1:-/Applications}"
 APP_BUNDLE="$INSTALL_ROOT/${APP_NAME}.app"
 LOG_FILE="$HOME/Library/Logs/Dispatch.log"
@@ -22,8 +25,10 @@ if [ ! -x "$SOURCE_DIR/.venv/bin/python" ]; then
 fi
 
 # Stop any currently-running instance so the new bundle can claim port 8765
-# cleanly the first time it launches.
-pkill -f "dispatch/app.py" >/dev/null 2>&1 || true
+# cleanly the first time it launches. Kill by port (robust) rather than by
+# argv pattern — a process started with a relative `app.py` path won't match
+# a "dispatch/app.py" pattern, which is how stale instances survived before.
+for pid in $(lsof -ti :8765 2>/dev/null); do kill "$pid" >/dev/null 2>&1 || true; done
 sleep 1
 
 # Rebuild from scratch — small enough that this is faster than diffing.
@@ -32,6 +37,14 @@ if [ -d "$APP_BUNDLE" ]; then
 fi
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
+
+# Ship the app icon. The thin launcher used to omit this, leaving a generic
+# Dock/⌘-Tab icon — copy the committed .icns so the bundle is recognizable.
+if [ -f "$SOURCE_DIR/Dispatch.icns" ]; then
+    cp "$SOURCE_DIR/Dispatch.icns" "$APP_BUNDLE/Contents/Resources/Dispatch.icns"
+else
+    echo "WARN: Dispatch.icns not found in $SOURCE_DIR — bundle will have a generic icon" >&2
+fi
 
 # ---------- Info.plist ----------
 cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF
@@ -47,6 +60,8 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF
     <string>Dispatch</string>
     <key>CFBundleDisplayName</key>
     <string>Dispatch</string>
+    <key>CFBundleIconFile</key>
+    <string>Dispatch.icns</string>
     <key>CFBundleVersion</key>
     <string>1.0.0</string>
     <key>CFBundleShortVersionString</key>

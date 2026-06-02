@@ -20,9 +20,11 @@ from pathlib import Path
 
 SETTINGS = Path.home() / ".claude" / "settings.local.json"
 HOOK_CMD = str(Path(__file__).resolve().parent / "hooks" / "pretooluse.sh")
-DEFAULT_MATCHER = "Bash|Write|Edit|WebFetch"
-# Stable id we use to recognise our own hook entries.
+PROMPT_HOOK_CMD = str(Path(__file__).resolve().parent / "hooks" / "userpromptsubmit.sh")
+DEFAULT_MATCHER = "Bash|Write|Edit|WebFetch|Task|WebSearch"
+# Stable ids we use to recognise our own hook entries.
 HOOK_TAG = "dispatch:pretooluse"
+PROMPT_HOOK_TAG = "dispatch:userpromptsubmit"
 
 
 def _load() -> dict:
@@ -40,10 +42,19 @@ def _save(data: dict) -> None:
 
 
 def _is_ours(entry: dict) -> bool:
-    """An entry is ours if any of its `hooks` references our script path or tag."""
+    """An entry is ours if any of its `hooks` references our PreToolUse script path or tag."""
     for h in entry.get("hooks", []) or []:
         cmd = h.get("command", "") or ""
         if HOOK_CMD in cmd or HOOK_TAG in cmd:
+            return True
+    return False
+
+
+def _is_ours_prompt(entry: dict) -> bool:
+    """An entry is ours if it references our UserPromptSubmit script path or tag."""
+    for h in entry.get("hooks", []) or []:
+        cmd = h.get("command", "") or ""
+        if PROMPT_HOOK_CMD in cmd or PROMPT_HOOK_TAG in cmd:
             return True
     return False
 
@@ -66,23 +77,38 @@ def status() -> int:
 def install(matcher: str) -> int:
     data = _load()
     hooks_root = data.setdefault("hooks", {})
+
+    # --- PreToolUse (gate + M3a sub-agent rewriter) ---
     pre = hooks_root.setdefault("PreToolUse", [])
-    # remove any prior dispatch entries so we don't accumulate duplicates
     pre[:] = [e for e in pre if not _is_ours(e)]
     pre.append({
         "matcher": matcher,
-        "hooks": [
-            {
-                "type": "command",
-                "command": HOOK_CMD,
-                "timeout": 130,  # match the hook's curl timeout + a bit
-            }
-        ],
+        "hooks": [{
+            "type": "command",
+            "command": HOOK_CMD,
+            "timeout": 130,
+        }],
     })
+
+    # --- UserPromptSubmit (M3b prompt router) ---
+    # The hook fails open when m3b_prompt_router is off, so installing it
+    # always is harmless — the feature flag controls behavior.
+    ups = hooks_root.setdefault("UserPromptSubmit", [])
+    ups[:] = [e for e in ups if not _is_ours_prompt(e)]
+    ups.append({
+        "hooks": [{
+            "type": "command",
+            "command": PROMPT_HOOK_CMD,
+            "timeout": 8,
+        }],
+    })
+
     _save(data)
     print(f"installed -> {SETTINGS}")
-    print(f"  matcher = {matcher!r}")
-    print(f"  command = {HOOK_CMD}")
+    print(f"  PreToolUse matcher = {matcher!r}")
+    print(f"    command = {HOOK_CMD}")
+    print(f"  UserPromptSubmit (no matcher — fires on every prompt)")
+    print(f"    command = {PROMPT_HOOK_CMD}")
     print("  start a NEW claude session for this to take effect.")
     return 0
 
@@ -90,18 +116,24 @@ def install(matcher: str) -> int:
 def uninstall() -> int:
     data = _load()
     pre = data.get("hooks", {}).get("PreToolUse", []) or []
-    before = len(pre)
+    ups = data.get("hooks", {}).get("UserPromptSubmit", []) or []
+    before_pre = len(pre)
+    before_ups = len(ups)
     pre[:] = [e for e in pre if not _is_ours(e)]
-    if before == len(pre):
+    ups[:] = [e for e in ups if not _is_ours_prompt(e)]
+    removed = (before_pre - len(pre)) + (before_ups - len(ups))
+    if removed == 0:
         print("nothing to remove")
         return 1
     # tidy up empty containers
     if not pre:
         data.get("hooks", {}).pop("PreToolUse", None)
+    if not ups:
+        data.get("hooks", {}).pop("UserPromptSubmit", None)
     if not data.get("hooks"):
         data.pop("hooks", None)
     _save(data)
-    print(f"uninstalled — {before - len(pre)} entry/entries removed from {SETTINGS}")
+    print(f"uninstalled — {removed} entry/entries removed from {SETTINGS}")
     return 0
 
 

@@ -90,6 +90,8 @@ class HookApproval:
     event: threading.Event
     decision: str = "ask"   # "allow" | "deny" | "ask" (timeout default)
     started_at: float = field(default_factory=time.time)
+    quota_tier: str = "normal"   # current quota tier at request time
+    is_heavy: bool = False       # is this a heavy tool (Task/WebFetch/WebSearch)
 
 
 @dataclass
@@ -639,11 +641,81 @@ class Dispatch:
             self._add(callsign, f"[hook] auto-allowed (rule {matched_rule!r}): {summary}")
             return "allow"
 
+        # Quota-tier gating (M2): heavy tools in emergency tier may auto-deny
+        # if the config opts in. Default config does NOT auto-deny — surfaces
+        # context to the user via the menu/dashboard and lets them decide.
+        # Entire block is gated by m2_tier_alerts flag.
+        qtier, is_heavy = "normal", False
+        try:
+            import quota
+            if quota.feature_enabled("m2_tier_alerts"):
+                qtier = quota.current_tier()
+                is_heavy = quota.is_heavy_tool(tool_name)
+                qcfg = quota.tracker().config
+                auto_deny = bool(qcfg.get("emergency_auto_deny_heavy", False))
+                if qtier == "emergency" and is_heavy and auto_deny:
+                    self._add(
+                        callsign,
+                        f"[hook] auto-DENIED by quota (emergency tier, heavy tool): {summary}",
+                    )
+                    return "deny"
+        except Exception:
+            pass
+
+        # Tag the summary so menu + dashboard show why this is a heavy ask.
+        if is_heavy and qtier in ("nudge", "enforce", "emergency"):
+            tagged_summary = f"⚠ {qtier.upper()} · {summary}"
+        else:
+            tagged_summary = summary
+
+        # M3a: sub-agent rewriter — only for Task tool calls. Classifies the
+        # task description and (if config + safety allow) rewrites the model
+        # field via hookSpecificOutput.updatedInput. In shadow mode logs the
+        # decision without applying. The full result rides on the return path
+        # — if apply=True we short-circuit user approval.
+        try:
+            import quota, routing
+            if (quota.feature_enabled("m3a_subagent_router")
+                    and tool_name == "Task"):
+                qcfg = quota.tracker().config
+                routing_dec = routing.route_subagent(session_id, tool_input, qcfg)
+                if routing_dec.apply:
+                    saved = int((1 - routing_dec.cost_ratio) * 100)
+                    self._add(
+                        callsign,
+                        f"[m3a] auto-route Task: "
+                        f"{routing_dec.original_model} → {routing_dec.recommended_model} "
+                        f"(conf {routing_dec.confidence:.2f}, save ~{saved}%)",
+                    )
+                    updated = dict(tool_input)
+                    updated["model"] = routing_dec.recommended_model
+                    return {
+                        "permission": "allow",
+                        "updated_input": updated,
+                        "reason": (f"m3a routed to {routing_dec.recommended_model}: "
+                                   f"{routing_dec.reason}"),
+                    }
+                elif routing_dec.classifier_stage != "off":
+                    # Shadow / suggest / blocked — log but don't apply.
+                    tag = "shadow" if routing_dec.mode == "shadow" else routing_dec.mode
+                    self._add(
+                        callsign,
+                        f"[m3a/{tag}] Task→{routing_dec.recommended_model} "
+                        f"(conf {routing_dec.confidence:.2f}, {routing_dec.reason})",
+                    )
+                    if routing_dec.notify_user:
+                        tagged_summary = (
+                            f"💡 suggest→{routing_dec.recommended_model} · {tagged_summary}"
+                        )
+        except Exception as exc:
+            self._add(callsign, f"[m3a] routing error: {exc}")
+
         req_id = uuid.uuid4().hex
         approval = HookApproval(
             request_id=req_id, callsign=callsign, session_id=session_id,
-            tool_name=tool_name, tool_summary=summary,
+            tool_name=tool_name, tool_summary=tagged_summary,
             event=threading.Event(),
+            quota_tier=qtier, is_heavy=is_heavy,
         )
         with self._lock:
             self.state.hook_pending[req_id] = approval
@@ -679,6 +751,71 @@ class Dispatch:
         # (The hook caller — Claude Code — already gets the decision via the
         # HTTP response; speaking it adds nothing.)
         return decision
+
+    def handle_user_prompt(self, session_id: str, prompt: str) -> dict:
+        """M3b: UserPromptSubmit hook entry.
+
+        Classifies the user's prompt and, when routing applies, returns
+        hookSpecificOutput.additionalContext that hints Opus to delegate
+        to a Task sub-agent on a cheaper model. PreToolUse (M3a) catches
+        the resulting Task call and does the actual model swap — this just
+        nudges Opus to spawn the delegation.
+
+        Returns an empty dict to pass through unchanged.
+        """
+        try:
+            import quota, routing
+        except Exception as exc:
+            self._add("DISPATCH", f"[m3b] import error: {exc}")
+            return {}
+        config = quota.tracker().config
+        # We don't actually know the current model from the hook payload —
+        # assume Opus (the default for new Claude Code sessions). The
+        # downgrade-only safety guard handles the case where the unit is
+        # already on Sonnet/Haiku (no further downgrade possible).
+        current_model = "claude-opus-4-7"
+        routing_dec = routing.route_prompt(
+            session_id, prompt, current_model, config,
+        )
+        # Figure out callsign for the channel log.
+        roster = self.roster()
+        agent = next(
+            (a for a in roster.values() if a.session_id == session_id),
+            None,
+        )
+        callsign = agent.callsign if agent else f"PID-{session_id[:8]}"
+
+        if not routing_dec.apply:
+            if routing_dec.classifier_stage != "off":
+                tag = ("shadow" if routing_dec.mode == "shadow"
+                       else routing_dec.mode)
+                self._add(callsign, (
+                    f"[m3b/{tag}] prompt→{routing_dec.recommended_model} "
+                    f"(conf {routing_dec.confidence:.2f}, {routing_dec.reason})"
+                ))
+            return {}
+
+        # Auto modes — emit additionalContext nudging delegation.
+        saved_pct = int((1 - routing_dec.cost_ratio) * 100)
+        self._add(callsign, (
+            f"[m3b/auto] prompt→{routing_dec.recommended_model} "
+            f"(conf {routing_dec.confidence:.2f}, save ~{saved_pct}%)"
+        ))
+        additional_context = (
+            f"[Dispatch routing] The user's prompt has been classified as: "
+            f"{routing_dec.reason}. "
+            f"Recommended handling: spawn a Task sub-agent with "
+            f"model=\"{routing_dec.recommended_model}\" and pass the user's "
+            f"request through. Estimated {saved_pct}% cost reduction. "
+            f"This routing is advisory — if the prompt actually requires "
+            f"Opus's reasoning depth, you may keep the work in-session."
+        )
+        return {
+            "hookSpecificOutput": {
+                "hookEventName": "UserPromptSubmit",
+                "additionalContext": additional_context,
+            }
+        }
 
     def grant_hook(self, request_id: str):
         with self._lock:

@@ -17,6 +17,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from paths import RESOURCE_DIR
+import quota
+import routing
+
 DEFAULT_PORT = 8765
 DASHBOARD_PATH = RESOURCE_DIR / "dashboard.html"
 
@@ -39,6 +42,15 @@ class _Handler(BaseHTTPRequestHandler):
         if self.path == "/state":
             self._send_json(200, _build_state_snapshot())
             return
+        if self.path == "/routing":
+            self._send_json(200, {
+                "audits": routing.recent_audits(50),
+                "summary_24h": routing.audit_summary(86400),
+                "feature_m3a": quota.feature_enabled("m3a_subagent_router"),
+                "feature_m3b": quota.feature_enabled("m3b_prompt_router"),
+                "config": quota.tracker().config.get("routing", {}),
+            })
+            return
         self._send_json(404, {"error": "not found"})
 
     # ---------------- POST ----------------
@@ -46,6 +58,9 @@ class _Handler(BaseHTTPRequestHandler):
         path = self.path
         if path == "/approve":
             self._handle_approve()
+            return
+        if path == "/prompt":
+            self._handle_prompt()
             return
         if path.startswith("/api/"):
             self._handle_api(path[len("/api/"):])
@@ -64,7 +79,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json(503, {"error": "dispatch not initialised"})
             return
         try:
-            decision = _DISPATCH.request_hook_approval(
+            result = _DISPATCH.request_hook_approval(
                 session_id=payload.get("session_id", ""),
                 tool_name=payload.get("tool_name", ""),
                 tool_input=payload.get("tool_input", {}),
@@ -72,14 +87,53 @@ class _Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             self._send_json(500, {"error": f"dispatch failed: {exc}"})
             return
+        # request_hook_approval returns either a string (legacy: simple
+        # permission) or a dict {permission, updated_input, reason}. The dict
+        # form is used by M3a when the sub-agent rewriter rewrites tool_input.
+        if isinstance(result, dict):
+            permission = result.get("permission", "allow")
+            updated_input = result.get("updated_input")
+            reason = result.get("reason", "via dispatch")
+        else:
+            permission = result
+            updated_input = None
+            reason = "via dispatch"
         out = {
             "hookSpecificOutput": {
                 "hookEventName": "PreToolUse",
-                "permissionDecision": decision,
-                "permissionDecisionReason": "via dispatch",
+                "permissionDecision": permission,
+                "permissionDecisionReason": reason,
             }
         }
+        if updated_input is not None:
+            out["hookSpecificOutput"]["updatedInput"] = updated_input
         self._send_json(200, out)
+
+    # ---- /prompt (UserPromptSubmit hook entry — M3b) ----
+    def _handle_prompt(self):
+        length = int(self.headers.get("Content-Length", 0) or 0)
+        try:
+            payload = json.loads((self.rfile.read(length) or b"{}").decode())
+        except Exception as exc:
+            self._send_json(400, {"error": f"bad json: {exc}"})
+            return
+        if _DISPATCH is None:
+            self._send_json(503, {"error": "dispatch not initialised"})
+            return
+        # Feature-gate at the entry — when m3b is off, pass through with
+        # empty hookSpecificOutput so Claude proceeds unchanged.
+        if not quota.feature_enabled("m3b_prompt_router"):
+            self._send_json(200, {})
+            return
+        try:
+            result = _DISPATCH.handle_user_prompt(
+                session_id=payload.get("session_id", ""),
+                prompt=payload.get("prompt", ""),
+            )
+        except Exception as exc:
+            self._send_json(500, {"error": f"prompt handler failed: {exc}"})
+            return
+        self._send_json(200, result or {})
 
     # ---- /api/* (dashboard-driven actions) ----
     def _handle_api(self, rest: str):
@@ -194,6 +248,22 @@ def _build_state_snapshot() -> dict:
         for t in s.log[-200:]
     ]
 
+    # Quota snapshot — gated by M1 feature flag. When off, the dashboard
+    # gracefully hides the pill / card via the null check in renderQuotaHeader.
+    if quota.feature_enabled("m1_quota_meter"):
+        try:
+            quota_snap = quota.snapshot()
+        except Exception as exc:
+            quota_snap = {"error": str(exc), "pct": 0, "tier": "normal"}
+    else:
+        quota_snap = None
+
+    # Feature flag + routing-mode snapshot — drives the UI toggle panel.
+    try:
+        features_state = quota.all_feature_states()
+    except Exception:
+        features_state = {"features": {}, "routing": {}, "valid_routing_modes": []}
+
     return {
         "roster": units,
         "log": log,
@@ -201,6 +271,8 @@ def _build_state_snapshot() -> dict:
         "alert_count": alert_count,
         "complete_count": len(s.completed),
         "permission_count": permission_count,
+        "quota": quota_snap,
+        "features_state": features_state,
     }
 
 
@@ -255,6 +327,37 @@ def _dispatch_action(action: str, arg: str, body: dict):
         d.test_trigger_complete(); return {"ok": True}
     if action == "test_awaiting":
         d.test_trigger_awaiting(); return {"ok": True}
+    if action == "set_feature":
+        # arg = "<feature_name>:<true|false>" — single arg avoids body parsing.
+        if ":" not in arg:
+            return {"ok": False, "error": "arg must be 'name:true|false'"}
+        name, val = arg.split(":", 1)
+        try:
+            result = quota.set_feature(name, val.lower() in ("true", "1", "on", "yes"))
+            return {"ok": True, **result}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+    if action == "set_routing_mode":
+        # arg = "subagent:auto_notify" or "prompt:shadow"
+        if ":" not in arg:
+            return {"ok": False, "error": "arg must be 'source:mode'"}
+        source, mode = arg.split(":", 1)
+        try:
+            result = quota.set_routing_mode(source, mode)
+            return {"ok": True, **result}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+    if action == "test_quota_tier":
+        # Queue a test tier transition. The app's next tick will fire all
+        # the normal side effects (notification + radio advisory). arg is one
+        # of normal / nudge / enforce / emergency.
+        target = (arg or "nudge").strip()
+        if target not in ("normal", "nudge", "enforce", "emergency"):
+            return {"ok": False, "error": f"unknown tier: {target}"}
+        mon = quota.monitor()
+        prev = mon.current_tier
+        mon.queue_test_transition(target)
+        return {"ok": True, "from": prev, "to": target, "fires_on_next_tick": True}
     # Voice signals — dashboard asks the menu-bar app to start the mic.
     if action == "voice_to_all":
         d.signal_voice_target("ALL"); return {"ok": True}

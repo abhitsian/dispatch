@@ -35,6 +35,7 @@ import rumps
 from audio import CHANNEL, Recorder, transcribe
 from dispatch import Dispatch
 from dispatch_server import start_server as start_approval_server
+import quota
 
 from paths import RESOURCE_DIR
 APP_DIR = RESOURCE_DIR  # legacy alias used throughout the file
@@ -124,6 +125,12 @@ class DispatchApp(rumps.App):
         )
         self.queue_item = rumps.MenuItem("Channel: idle")
         self.queue_item.set_callback(None)
+        # Token quota pill — color-coded by usage tier, refreshed each tick.
+        self.quota_item = rumps.MenuItem("Quota: …")
+        self.quota_item.set_callback(self.show_quota_detail)
+        self.quota_detail_item = rumps.MenuItem("  · scanning…")
+        self.quota_detail_item.set_callback(None)
+        self._last_quota_snap: dict = {}
         self.hook_item = rumps.MenuItem(
             "Hook: …", callback=self.toggle_hook_install
         )
@@ -212,6 +219,7 @@ class DispatchApp(rumps.App):
             self._refresh_queue_label()
             self._refresh_hook_label()
             self._refresh_mute_all_label()
+            self._refresh_quota_label()
         self._fire_notifications_if_new()
         self._apply_title()
 
@@ -323,6 +331,10 @@ class DispatchApp(rumps.App):
             self.menu.add(None)
 
         # 2. STATIC CONTROLS
+        # Quota pill — always visible so the user sees burn at a glance.
+        self.menu.add(self.quota_item)
+        self.menu.add(self.quota_detail_item)
+        self.menu.add(None)
         self.menu.add(self.show_window_item)
         self.menu.add(None)
         self.menu.add(self.transmit_item)
@@ -344,6 +356,7 @@ class DispatchApp(rumps.App):
         self._refresh_log()
         self._refresh_queue_label()
         self._refresh_hook_label()
+        self._refresh_quota_label()
 
     def _fire_notifications_if_new(self):
         # Permission None -> set
@@ -646,6 +659,81 @@ class DispatchApp(rumps.App):
         self.mute_all_units_item.title = (
             "🔊  Unmute all units" if all_muted else "🔇  Mute all units"
         )
+
+    def _refresh_quota_label(self):
+        # M1 feature flag — when off, hide pill and skip all scanning.
+        if not quota.feature_enabled("m1_quota_meter"):
+            self.quota_item.title = "Quota: disabled"
+            self.quota_detail_item.title = "  (m1_quota_meter = false in config)"
+            return
+        try:
+            snap = quota.snapshot()
+        except Exception as exc:
+            self.quota_item.title = f"Quota: error ({exc})"
+            return
+        self._last_quota_snap = snap
+        self.quota_item.title = quota.format_pill(snap)
+        self.quota_detail_item.title = "  " + quota.format_detail(snap)
+        # M2 feature flag — when off, skip tier transition detection and
+        # side effects entirely (no notification, no voice, no banner).
+        if not quota.feature_enabled("m2_tier_alerts"):
+            return
+        events = quota.monitor().tick()
+        for ev in events:
+            self._handle_tier_transition(ev, snap)
+
+    def _handle_tier_transition(self, ev, snap):
+        """Tier just changed. Log it always; on escalation also fire
+        notification + radio advisory (one-shot, not nag)."""
+        pct = int(snap.get("pct", 0) * 100)
+        # Always log the transition so it's visible in the channel log.
+        self.dispatch._add(
+            "DISPATCH",
+            f"[quota] tier {('escalated' if ev.is_escalation else 'eased')}: "
+            f"{ev.from_tier} → {ev.to_tier} ({pct}%)",
+        )
+        if not ev.is_escalation:
+            return
+        label = quota.tier_short_label(ev.to_tier)
+        _notify(
+            "DISPATCH — quota tier escalation",
+            f"{label} ({pct}%)",
+            f"Burn climbed from {ev.from_tier} to {ev.to_tier}. "
+            f"5h: {int(snap.get('pct_5h',0)*100)}%  ·  Week: {int(snap.get('pct_7d',0)*100)}%",
+        )
+        advisory = quota.tier_advisory(ev.to_tier)
+        if advisory:
+            CHANNEL.enqueue_tx(
+                advisory, "DISPATCH",
+                label=f"quota → {ev.to_tier}",
+            )
+
+    def show_quota_detail(self, _):
+        snap = self._last_quota_snap or quota.snapshot()
+        cfg = snap.get("config", {})
+        per_session = snap.get("per_session") or {}
+        top = sorted(per_session.items(), key=lambda x: -x[1])[:8]
+        lines = [
+            f"Plan tier: {cfg.get('tier', 'unknown')}",
+            "",
+            f"5h window:  {snap['tokens_5h']:>14,}  /  {snap['ceiling_5h']:>12,}  ({snap['pct_5h']*100:.1f}%)",
+            f"Week:       {snap['tokens_7d']:>14,}  /  {snap['ceiling_7d']:>12,}  ({snap['pct_7d']*100:.1f}%)",
+            "",
+            f"Binding: {snap['pct']*100:.1f}% — tier {snap['tier'].upper()}",
+            f"5h resets in: {snap['reset_5h_in_sec']//60} min",
+            "",
+            "Top sessions in current 5h window:",
+        ]
+        for sid, tok in top:
+            lines.append(f"  {sid[:18]}…   {tok:>10,} cost-equiv tokens")
+        if not top:
+            lines.append("  (no recent traffic)")
+        lines += [
+            "",
+            "Cost-equiv = input + output×5 + cache_create×1.25 + cache_read×0.1",
+            "Edit ~/Library/Application Support/Dispatch/quota-config.json to tune.",
+        ]
+        _open_window("Dispatch — token quota", "\n".join(lines))
 
     # ---------- Claude Code hook install/uninstall ----------
     def _hook_installed(self) -> bool:
