@@ -381,6 +381,13 @@ def _dispatch_action(action: str, arg: str, body: dict):
             return {"ok": True, **result}
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
+    if action == "offload_check":
+        # Advisor only — score a task, never execute it.
+        import offload
+        task = (body or {}).get("task", "")
+        if not task:
+            return {"ok": False, "error": "missing 'task'"}
+        return {"ok": True, **offload.recommend(task)}
     # Voice signals — dashboard asks the menu-bar app to start the mic.
     if action == "voice_to_all":
         d.signal_voice_target("ALL"); return {"ok": True}
