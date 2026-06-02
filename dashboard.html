@@ -502,13 +502,31 @@ function buildFeaturesPanel(root, fs, modes) {
       <span class="title">⚙ Features</span>
       <span class="hint">flips take effect immediately — no restart needed</span>
     </div>
-    ${rows}`;
+    ${rows}
+    <div class="fp-head" style="margin-top:14px"><span class="title">App</span></div>
+    <div class="feature-row">
+      <label class="switch">
+        <input type="checkbox" id="hook-toggle">
+        <span class="slider"></span>
+      </label>
+      <div>
+        <div class="name">Permission hook</div>
+        <div class="desc">Route Claude Code tool approvals through Dispatch (start a new session after enabling)</div>
+      </div>
+      <div class="ctrl"></div>
+    </div>
+    <div class="desc" style="padding:10px 2px 2px">Quit: right-click the Dispatch icon in the Dock → Quit.</div>`;
   root.dataset.built = '1';
 }
 
 // Reconcile control state from the server WITHOUT touching the DOM the user
 // is actively using: skip the focused element, and skip anything just flipped.
-function reconcileFeaturesPanel(root, fs) {
+function reconcileFeaturesPanel(root, fs, hookInstalled) {
+  const ht = root.querySelector('#hook-toggle');
+  if (ht && document.activeElement !== ht && !_isLocked('hook')) {
+    const want = !!hookInstalled;
+    if (ht.checked !== want) ht.checked = want;
+  }
   FEATURE_META.forEach(f => {
     const cb = root.querySelector(`input[type="checkbox"][data-feature="${f.id}"]`);
     if (cb && document.activeElement !== cb && !_isLocked(f.id)) {
@@ -531,11 +549,24 @@ function renderFeaturesPanel(s) {
   const fs = s.features_state || { features: {}, routing: {}, valid_routing_modes: [] };
   const modes = fs.valid_routing_modes || ['off','shadow','suggest','auto_notify','auto_silent'];
   if (!root.dataset.built) buildFeaturesPanel(root, fs, modes);
-  reconcileFeaturesPanel(root, fs);
+  reconcileFeaturesPanel(root, fs, s.hook_installed);
 }
 
 // Delegated toggle/select handlers — wired once, react to dynamic content.
 document.addEventListener('change', async (e) => {
+  const ht = e.target.closest('#hook-toggle');
+  if (ht) {
+    lockFlip('hook');
+    try {
+      await api('/api/toggle_hook', { method: 'POST' });
+      refresh();
+    } catch (err) {
+      ht.checked = !ht.checked;  // revert
+      delete _flipLock['hook'];
+      alert('Failed to toggle permission hook: ' + err.message);
+    }
+    return;
+  }
   const cb = e.target.closest('input[type="checkbox"][data-feature]');
   if (cb) {
     const name = cb.dataset.feature;

@@ -786,37 +786,30 @@ def _another_instance_alive(port: int = 8765) -> bool:
 
 
 def _install_dock_reopen_handler():
-    """Make clicking the Dock icon raise the dashboard window AND pop the
-    menu-bar dropdown.
+    """Make clicking the Dock icon raise the dashboard window.
 
-    On a notched Mac the rumps status-bar item is often hidden behind the
-    notch, so the menu is unreachable there. rumps' NSApp delegate ships no
-    reopen handler, so we inject one onto its class before run(): AppKit
-    instantiates that class as the delegate (rumps.py: NSApp.alloc().init()),
-    and the new method then fires on every Dock-icon click / app reopen.
+    rumps' NSApp delegate ships no reopen handler, so we inject one onto its
+    class before run(): AppKit instantiates that class as the delegate
+    (rumps.py: NSApp.alloc().init()), and the new method then fires on every
+    Dock-icon click / app reopen.
 
-    Best-effort: any failure here just means no auto-pop — the window and
-    menu bar still work as before.
+    We deliberately do NOT pop the menu-bar dropdown here: on a notched Mac
+    the status item is hidden behind the notch, so macOS has no slot to anchor
+    its menu to and dumps it at the screen origin (top-left). The dashboard
+    window IS the menu instead — it carries every action, plus the gear popover
+    for settings — so raising the window is the reliable move. (Quit lives on
+    the standard right-click Dock menu.)
+
+    Best-effort: any failure here just means the Dock click does nothing extra.
     """
     try:
         import objc
         from rumps.rumps import NSApp as _RumpsAppDelegate
 
         def _reopen(self, ns_app, has_visible_windows):
-            # 1) bring the desktop window forward (re-shows if already open)
             try:
                 from native_window import open_window
                 open_window("http://127.0.0.1:8765/ui")
-            except Exception:
-                pass
-            # 2) pop the menu-bar dropdown, anchored at the status item. If the
-            #    item is fully hidden by the notch macOS may not place it — the
-            #    window still came forward, so this degrades gracefully.
-            try:
-                si = getattr(self, "nsstatusitem", None)
-                btn = si.button() if si is not None else None
-                if btn is not None:
-                    btn.performClick_(None)
             except Exception:
                 pass
             return True

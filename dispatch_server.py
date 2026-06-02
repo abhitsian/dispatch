@@ -197,6 +197,17 @@ class _Handler(BaseHTTPRequestHandler):
 
 # ---------------- state snapshot for /state ----------------
 
+def _hook_installed() -> bool:
+    """Reuse install_hook's own detection so we never drift from how the hook
+    is actually written into settings.local.json."""
+    try:
+        import install_hook
+        entries = install_hook._load().get("hooks", {}).get("PreToolUse", []) or []
+        return any(install_hook._is_ours(e) for e in entries)
+    except Exception:
+        return False
+
+
 def _build_state_snapshot() -> dict:
     if _DISPATCH is None:
         return {"roster": [], "log": [], "channel": {}, "alert_count": 0,
@@ -280,6 +291,7 @@ def _build_state_snapshot() -> dict:
         "permission_count": permission_count,
         "quota": quota_snap,
         "features_state": features_state,
+        "hook_installed": _hook_installed(),
     }
 
 
@@ -370,6 +382,18 @@ def _dispatch_action(action: str, arg: str, body: dict):
         d.signal_voice_target("ALL"); return {"ok": True}
     if action == "voice_to":
         d.signal_voice_target(arg or None); return {"ok": True, "target": arg}
+    if action == "toggle_hook":
+        # Install/uninstall the Claude Code permission hook — the one menu-bar
+        # action the dashboard window didn't already expose.
+        import install_hook
+        try:
+            if _hook_installed():
+                install_hook.uninstall()
+            else:
+                install_hook.install(install_hook.DEFAULT_MATCHER)
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "installed": _hook_installed()}
     return None
 
 
