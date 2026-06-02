@@ -90,8 +90,6 @@ class HookApproval:
     event: threading.Event
     decision: str = "ask"   # "allow" | "deny" | "ask" (timeout default)
     started_at: float = field(default_factory=time.time)
-    quota_tier: str = "normal"   # current quota tier at request time
-    is_heavy: bool = False       # is this a heavy tool (Task/WebFetch/WebSearch)
 
 
 @dataclass
@@ -641,32 +639,8 @@ class Dispatch:
             self._add(callsign, f"[hook] auto-allowed (rule {matched_rule!r}): {summary}")
             return "allow"
 
-        # Quota-tier gating (M2): heavy tools in emergency tier may auto-deny
-        # if the config opts in. Default config does NOT auto-deny — surfaces
-        # context to the user via the menu/dashboard and lets them decide.
-        # Entire block is gated by m2_tier_alerts flag.
-        qtier, is_heavy = "normal", False
-        try:
-            import quota
-            if quota.feature_enabled("m2_tier_alerts"):
-                qtier = quota.current_tier()
-                is_heavy = quota.is_heavy_tool(tool_name)
-                qcfg = quota.tracker().config
-                auto_deny = bool(qcfg.get("emergency_auto_deny_heavy", False))
-                if qtier == "emergency" and is_heavy and auto_deny:
-                    self._add(
-                        callsign,
-                        f"[hook] auto-DENIED by quota (emergency tier, heavy tool): {summary}",
-                    )
-                    return "deny"
-        except Exception:
-            pass
-
-        # Tag the summary so menu + dashboard show why this is a heavy ask.
-        if is_heavy and qtier in ("nudge", "enforce", "emergency"):
-            tagged_summary = f"⚠ {qtier.upper()} · {summary}"
-        else:
-            tagged_summary = summary
+        # M3a routing (below) may re-tag this with a routing suggestion.
+        tagged_summary = summary
 
         # M3a: sub-agent rewriter — only for Task tool calls. Classifies the
         # task description and (if config + safety allow) rewrites the model
@@ -715,7 +689,6 @@ class Dispatch:
             request_id=req_id, callsign=callsign, session_id=session_id,
             tool_name=tool_name, tool_summary=tagged_summary,
             event=threading.Event(),
-            quota_tier=qtier, is_heavy=is_heavy,
         )
         with self._lock:
             self.state.hook_pending[req_id] = approval

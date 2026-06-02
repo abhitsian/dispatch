@@ -55,6 +55,10 @@ DEFAULT_TIER = "max_20x"
 DEFAULT_CONFIG = {
     "tier": DEFAULT_TIER,
     **TIER_PRESETS[DEFAULT_TIER],
+    # Color bands for the passive gauge ONLY (green/yellow/orange/red). These
+    # are NOT alert thresholds — M2 (tier alerts + enforcement) was removed
+    # because it alarmed and gated on a guessed ceiling. The meter is now
+    # purely informational; optimization lives in M3a/M3b routing.
     "tier_nudge": 0.60,
     "tier_enforce": 0.80,
     "tier_emergency": 0.90,
@@ -67,13 +71,10 @@ DEFAULT_CONFIG = {
     "weight_cache_create": 1.25,
     "weight_cache_read": 0.1,
     # Feature flags — top-level switches to disable any milestone wholesale.
-    # Each flag short-circuits its feature's code path so you can opt out
-    # without uninstalling anything. Defaults: M1+M2 on (low risk, observation
-    # only). M3a+M3b OFF (active rewriting / behavior change — opt-in once you
-    # trust the classifier).
+    # M1 = passive meter (observation only). M3a/M3b = the optimization layer
+    # (model routing). M2 (tier alerts/enforcement) was removed entirely.
     "features": {
         "m1_quota_meter": True,        # Scanning, pill, gauge, /state quota field
-        "m2_tier_alerts": True,        # Tier transitions, voice, banner, heavy-tool tags
         "m3a_subagent_router": False,  # Rewrite Task model via PreToolUse updatedInput
         "m3b_prompt_router": False,    # UserPromptSubmit hint to delegate to cheaper model
     },
@@ -169,7 +170,6 @@ def feature_enabled(name: str) -> bool:
 VALID_ROUTING_MODES = ("off", "shadow", "suggest", "auto_notify", "auto_silent")
 KNOWN_FEATURES = (
     "m1_quota_meter",
-    "m2_tier_alerts",
     "m3a_subagent_router",
     "m3b_prompt_router",
 )
@@ -451,166 +451,12 @@ def tracker() -> QuotaTracker:
 
 
 def snapshot() -> dict:
-    """Scan + return current snapshot, with monitor's test-mode override
-    applied to the tier field. Safe to call every second.
+    """Scan + return current usage snapshot. Safe to call every second.
 
-    The monitor may hold the tier at a forced value during a sticky window
-    (after queue_test_transition); when active, the returned snap reports
-    that tier and sets test_mode=True so the dashboard can flag it.
+    Passive (M1): reports tokens / ceilings / percentages and a color band.
+    No alerting, no enforcement — the band exists only to color the gauge.
     """
-    snap = tracker().scan()
-    mon = monitor()
-    if mon.is_test_active:
-        snap["tier"] = mon.current_tier
-        snap["test_mode"] = True
-    else:
-        snap["test_mode"] = False
-    return snap
-
-
-# ---------- tier transitions + heavy-tool gating (M2) ----------
-
-# Tools whose token cost vastly exceeds a normal turn — primary targets when
-# the quota tier rises to `enforce` or `emergency`.
-HEAVY_TOOLS = {
-    "Task",       # sub-agent fleet — biggest unhedged spend
-    "WebFetch",   # large pages = large inputs
-    "WebSearch",  # multi-result + follow-up fetches
-}
-
-
-def is_heavy_tool(tool_name: str) -> bool:
-    return tool_name in HEAVY_TOOLS
-
-
-def tier_advisory(tier: str) -> Optional[str]:
-    """Voice line for tier transition. None for normal (no nag on drop-back)."""
-    return {
-        "nudge": "Dispatch advisory: nudge tier, two-thirds burn, conserve transmissions, over.",
-        "enforce": "Dispatch enforce: eighty percent burn, heavy operations gated, over.",
-        "emergency": "Dispatch emergency: ninety percent burn, fleet operations restricted, over.",
-    }.get(tier)
-
-
-def tier_short_label(tier: str) -> str:
-    return {
-        "normal": "NORMAL",
-        "nudge": "NUDGE",
-        "enforce": "ENFORCE",
-        "emergency": "EMERGENCY",
-    }.get(tier, tier.upper())
-
-
-@dataclass
-class TierTransition:
-    from_tier: str
-    to_tier: str
-    pct: float
-    ts: float
-
-    @property
-    def is_escalation(self) -> bool:
-        order = ("normal", "nudge", "enforce", "emergency")
-        try:
-            return order.index(self.to_tier) > order.index(self.from_tier)
-        except ValueError:
-            return False
-
-
-class TierMonitor:
-    """Detects tier transitions between scan() calls.
-
-    The pill/card show CURRENT tier on every tick. This fires once when the
-    tier CHANGES so we can play a one-time advisory instead of nagging.
-
-    Sticky window: after any transition fires (real OR test), the new tier
-    holds for STICKY_SEC seconds before drop-backs are allowed. Prevents the
-    pill from oscillating and gives test transitions enough time on screen
-    for the user to see the banner.
-    """
-
-    STICKY_SEC = 20
-
-    def __init__(self):
-        self.current_tier = "normal"
-        self._last_seen_tier = "normal"
-        self._pending_test_tier: Optional[str] = None
-        self._sticky_until: float = 0.0
-
-    @property
-    def is_test_active(self) -> bool:
-        return time.time() < self._sticky_until and self._last_seen_tier != "normal"
-
-    def tick(self) -> list[TierTransition]:
-        """Called once per app tick. Scans tracker, fires transition events,
-        respects sticky window. Returns 0 or more events.
-        """
-        events: list[TierTransition] = []
-        now = time.time()
-
-        # A queued test transition wins. Fires the event, starts the sticky
-        # window so the new tier visibly persists.
-        if self._pending_test_tier is not None:
-            target = self._pending_test_tier
-            self._pending_test_tier = None
-            self._sticky_until = now + self.STICKY_SEC
-            events.append(TierTransition(
-                from_tier=self._last_seen_tier,
-                to_tier=target,
-                pct=0.0,
-                ts=now,
-            ))
-            self._last_seen_tier = target
-            self.current_tier = target
-            return events
-
-        # Inside sticky window — hold tier, don't fire any drop-backs.
-        if now < self._sticky_until:
-            return events
-
-        # Normal real-burn detection — fresh scan, compare against last seen.
-        raw_snap = tracker().scan()
-        new_tier = raw_snap.get("tier", "normal")
-        if new_tier != self._last_seen_tier:
-            events.append(TierTransition(
-                from_tier=self._last_seen_tier,
-                to_tier=new_tier,
-                pct=raw_snap.get("pct", 0.0),
-                ts=now,
-            ))
-            self._last_seen_tier = new_tier
-            # Escalations start a sticky window too, so the warning persists.
-            order = ("normal", "nudge", "enforce", "emergency")
-            try:
-                if order.index(new_tier) > order.index(events[0].from_tier):
-                    self._sticky_until = now + self.STICKY_SEC
-            except ValueError:
-                pass
-        self.current_tier = new_tier
-        return events
-
-    def queue_test_transition(self, tier: str):
-        """Force the next tick() to fire a transition into `tier`.
-
-        Used by /api/test_quota_tier so we can validate side effects without
-        waiting for real burn to cross thresholds.
-        """
-        self._pending_test_tier = tier
-
-
-_MONITOR: Optional[TierMonitor] = None
-
-
-def monitor() -> TierMonitor:
-    global _MONITOR
-    if _MONITOR is None:
-        _MONITOR = TierMonitor()
-    return _MONITOR
-
-
-def current_tier() -> str:
-    """Cheap accessor — current tier as last computed. Does NOT scan."""
-    return monitor().current_tier
+    return tracker().scan()
 
 
 # ---------- pretty helpers for the menu bar ----------

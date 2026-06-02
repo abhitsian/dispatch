@@ -674,39 +674,8 @@ class DispatchApp(rumps.App):
         self._last_quota_snap = snap
         self.quota_item.title = quota.format_pill(snap)
         self.quota_detail_item.title = "  " + quota.format_detail(snap)
-        # M2 feature flag — when off, skip tier transition detection and
-        # side effects entirely (no notification, no voice, no banner).
-        if not quota.feature_enabled("m2_tier_alerts"):
-            return
-        events = quota.monitor().tick()
-        for ev in events:
-            self._handle_tier_transition(ev, snap)
-
-    def _handle_tier_transition(self, ev, snap):
-        """Tier just changed. Log it always; on escalation also fire
-        notification + radio advisory (one-shot, not nag)."""
-        pct = int(snap.get("pct", 0) * 100)
-        # Always log the transition so it's visible in the channel log.
-        self.dispatch._add(
-            "DISPATCH",
-            f"[quota] tier {('escalated' if ev.is_escalation else 'eased')}: "
-            f"{ev.from_tier} → {ev.to_tier} ({pct}%)",
-        )
-        if not ev.is_escalation:
-            return
-        label = quota.tier_short_label(ev.to_tier)
-        _notify(
-            "DISPATCH — quota tier escalation",
-            f"{label} ({pct}%)",
-            f"Burn climbed from {ev.from_tier} to {ev.to_tier}. "
-            f"5h: {int(snap.get('pct_5h',0)*100)}%  ·  Week: {int(snap.get('pct_7d',0)*100)}%",
-        )
-        advisory = quota.tier_advisory(ev.to_tier)
-        if advisory:
-            CHANNEL.enqueue_tx(
-                advisory, "DISPATCH",
-                label=f"quota → {ev.to_tier}",
-            )
+        # M1 is passive — just refresh the pill/detail. No tier transitions,
+        # no voice, no banner, no enforcement (M2 removed).
 
     def show_quota_detail(self, _):
         snap = self._last_quota_snap or quota.snapshot()
@@ -719,7 +688,7 @@ class DispatchApp(rumps.App):
             f"5h window:  {snap['tokens_5h']:>14,}  /  {snap['ceiling_5h']:>12,}  ({snap['pct_5h']*100:.1f}%)",
             f"Week:       {snap['tokens_7d']:>14,}  /  {snap['ceiling_7d']:>12,}  ({snap['pct_7d']*100:.1f}%)",
             "",
-            f"Binding: {snap['pct']*100:.1f}% — tier {snap['tier'].upper()}",
+            f"Binding: {snap['pct']*100:.1f}% of estimated ceiling",
             f"5h resets in: {snap['reset_5h_in_sec']//60} min",
             "",
             "Top sessions in current 5h window:",

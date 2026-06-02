@@ -366,17 +366,6 @@ def _dispatch_action(action: str, arg: str, body: dict):
             return {"ok": True, **result}
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
-    if action == "test_quota_tier":
-        # Queue a test tier transition. The app's next tick will fire all
-        # the normal side effects (notification + radio advisory). arg is one
-        # of normal / nudge / enforce / emergency.
-        target = (arg or "nudge").strip()
-        if target not in ("normal", "nudge", "enforce", "emergency"):
-            return {"ok": False, "error": f"unknown tier: {target}"}
-        mon = quota.monitor()
-        prev = mon.current_tier
-        mon.queue_test_transition(target)
-        return {"ok": True, "from": prev, "to": target, "fires_on_next_tick": True}
     # Voice signals — dashboard asks the menu-bar app to start the mic.
     if action == "voice_to_all":
         d.signal_voice_target("ALL"); return {"ok": True}
