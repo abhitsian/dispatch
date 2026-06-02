@@ -52,6 +52,21 @@ class _Handler(BaseHTTPRequestHandler):
                 "config": quota.tracker().config.get("routing", {}),
             })
             return
+        if self.path == "/savings":
+            # On-demand (scans all JSONLs) — measured $ saved by cheaper-model
+            # usage vs all-Opus, plus how many routes Dispatch actually applied.
+            import time as _t
+            import savings
+            now = _t.time()
+            self._send_json(200, {
+                "measured_5h": savings.measure(5 * 3600, now),
+                "measured_7d": savings.measure(7 * 86400, now),
+                "routes_applied_24h": routing.audit_summary(86400).get("applied", 0),
+                "note": ("'saved' is measured from actual per-message model usage and is "
+                         "NOT all attributable to Dispatch — routes_applied is the part "
+                         "Dispatch caused."),
+            })
+            return
         self._send_json(404, {"error": "not found"})
 
     # ---------------- POST ----------------
