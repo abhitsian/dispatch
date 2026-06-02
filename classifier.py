@@ -44,10 +44,10 @@ _HAIKU_PATTERN = re.compile(
     r"find (all|the|every|any|where)|"
     r"list (all|the|every|files?)|"
     r"grep( for)?|count (the|how many|occurrences)|"
-    r"search (for|in|across)|locate|where (is|are|does|do)|"
+    r"search (for|in|across|every|all|the|through)|locate|where (is|are|does|do)|"
     r"which files?|what files? (contain|reference|import|use)|"
     r"show (me )?(all|the|every)|"
-    r"how many|read (the |this )?[\w./-]* ?file|cat |tail |head |"
+    r"how many|read (the |this )?(\w+\s+){0,3}file|cat |tail |head |"
     r"look up|check (if|whether) .* (exists?|is present)|"
     r"what (is|are) the (value|contents?|names?) of"
     r")\b",

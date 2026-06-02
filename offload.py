@@ -30,13 +30,21 @@ _VOLUME_HIGH = re.compile(
     r"repo-?wide|\d{2,}\s+(files?|items?|rows?|records?|entries|functions?))\b", re.I)
 _VOLUME_LOW = re.compile(
     r"\b(this (one|file|function|line|method|variable|change|bug)|"
-    r"a single|just (this|the|one)|one\s+\w+)\b", re.I)
+    r"a single|\bsingle\b|just (this|the|one)|one\s+\w+|the \w+ file\b)\b", re.I)
 
 # References to the live conversation → NOT self-contained.
 _CONTEXT_DEP = re.compile(
-    r"\b(the above|what we|we (just|discussed|did|built|talked|wrote)|earlier|"
+    r"\b(the above|what we|we (just|were|had|discussed|did|built|talked|wrote)|earlier|"
     r"our\s|continue|keep going|the code we|as discussed|same as|like before|"
-    r"previous(ly)?|that (file|function|change|one)|it\b)\b", re.I)
+    r"looking at|working on|previous(ly)?|"
+    r"that (file|function|change|one|module|code|thing|part|section)|it\b)\b", re.I)
+
+# 'refactor/clean up X for clarity' reads as mechanical by keyword but is
+# judgment work — keep on Opus regardless of the classifier.
+_JUDGMENT_REFACTOR = re.compile(
+    r"\b(refactor|clean ?up|rewrite|reorganit?ze|restructure)\b.*\b"
+    r"(clarity|readab\w*|maintainab\w*|cleaner|better|simpler|simplif\w*|"
+    r"elegan\w*|structure|design|idiomatic)\b", re.I)
 # Explicit standalone scope → self-contained.
 _SELF_CONTAINED = re.compile(
     r"\b(in (the |this )?(repo|directory|folder|codebase)|at /|under /|"
@@ -44,6 +52,8 @@ _SELF_CONTAINED = re.compile(
 
 
 def _reasoning_axis(task: str):
+    if _JUDGMENT_REFACTOR.search(task):
+        return "complex", "judgment work (refactor/clean-up for quality)", OPUS, False
     r = classify(task)
     if r.stage == "heuristic" and r.recommended_model == HAIKU:
         return "mechanical", r.reason, HAIKU, True
