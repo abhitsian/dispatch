@@ -450,10 +450,18 @@ const FEATURE_META = [
     hasMode: 'prompt' },
 ];
 
-function renderFeaturesPanel(s) {
-  const root = $('#features-panel');
-  const fs = s.features_state || { features: {}, routing: {}, valid_routing_modes: [] };
-  const modes = fs.valid_routing_modes || ['off','shadow','suggest','auto_notify','auto_silent'];
+// Suppress poll-revert for ~2s after a user flips a control, so the 1s
+// refresh() polling can't snap a checkbox/select back while the POST that
+// applies the change is still in flight. key -> expiry (ms epoch).
+const _flipLock = {};
+const _isLocked = (key) => Date.now() < (_flipLock[key] || 0);
+const lockFlip  = (key) => { _flipLock[key] = Date.now() + 2000; };
+
+// Build the panel structure ONCE. Rebuilding innerHTML on every 1s poll was
+// destroying the very controls the user was interacting with (the toggle
+// would snap back, dropdowns would close) — so we build once, then reconcile
+// values in place on each refresh.
+function buildFeaturesPanel(root, fs, modes) {
   const rows = FEATURE_META.map(f => {
     const enabled = !!fs.features[f.id];
     const modeSel = f.hasMode
@@ -481,6 +489,35 @@ function renderFeaturesPanel(s) {
       <span class="hint">flips take effect immediately — no restart needed</span>
     </div>
     ${rows}`;
+  root.dataset.built = '1';
+}
+
+// Reconcile control state from the server WITHOUT touching the DOM the user
+// is actively using: skip the focused element, and skip anything just flipped.
+function reconcileFeaturesPanel(root, fs) {
+  FEATURE_META.forEach(f => {
+    const cb = root.querySelector(`input[type="checkbox"][data-feature="${f.id}"]`);
+    if (cb && document.activeElement !== cb && !_isLocked(f.id)) {
+      const want = !!fs.features[f.id];
+      if (cb.checked !== want) cb.checked = want;
+    }
+    if (f.hasMode) {
+      const sel = root.querySelector(`select.mode-sel[data-mode-source="${f.hasMode}"]`);
+      if (sel && document.activeElement !== sel && !_isLocked('mode:' + f.hasMode)) {
+        const want = fs.routing[f.hasMode + '_mode'];
+        if (want && sel.value !== want) sel.value = want;
+        sel.disabled = !fs.features[f.id];
+      }
+    }
+  });
+}
+
+function renderFeaturesPanel(s) {
+  const root = $('#features-panel');
+  const fs = s.features_state || { features: {}, routing: {}, valid_routing_modes: [] };
+  const modes = fs.valid_routing_modes || ['off','shadow','suggest','auto_notify','auto_silent'];
+  if (!root.dataset.built) buildFeaturesPanel(root, fs, modes);
+  reconcileFeaturesPanel(root, fs);
 }
 
 // Delegated toggle/select handlers — wired once, react to dynamic content.
@@ -489,12 +526,14 @@ document.addEventListener('change', async (e) => {
   if (cb) {
     const name = cb.dataset.feature;
     const enabled = cb.checked;
+    lockFlip(name);  // hold the user's choice while the POST is in flight
     try {
       await api(`/api/set_feature/${encodeURIComponent(name + ':' + enabled)}`,
                 { method: 'POST' });
       refresh();
     } catch (err) {
       cb.checked = !enabled;  // revert
+      delete _flipLock[name];
       alert('Failed to flip ' + name + ': ' + err.message);
     }
     return;
@@ -503,6 +542,7 @@ document.addEventListener('change', async (e) => {
   if (sel) {
     const source = sel.dataset.modeSource;
     const mode = sel.value;
+    lockFlip('mode:' + source);
     try {
       await api(`/api/set_routing_mode/${encodeURIComponent(source + ':' + mode)}`,
                 { method: 'POST' });
