@@ -186,6 +186,18 @@
   .switch input:checked + .slider:before { transform: translateX(16px);
                                            background: white; }
   .switch input:disabled + .slider { opacity: 0.4; cursor: not-allowed; }
+  /* gear button + settings popover */
+  .gear-btn { background: none; border: 1px solid var(--line); color: var(--ink);
+              border-radius: 8px; padding: 3px 9px; cursor: pointer; font-size: 15px;
+              line-height: 1.2; transition: background .12s, transform .3s; }
+  .gear-btn:hover { background: var(--line); }
+  .gear-btn.open { transform: rotate(60deg); }
+  .settings-pop { position: fixed; top: 54px; right: 16px; width: 390px;
+                  max-height: 76vh; overflow: auto; z-index: 60; margin: 0;
+                  display: none; box-shadow: 0 12px 36px rgba(0,0,0,.45); }
+  .settings-pop.open { display: block; }
+  .settings-backdrop { position: fixed; inset: 0; z-index: 55; display: none; }
+  .settings-backdrop.open { display: block; }
 </style>
 </head>
 <body>
@@ -197,13 +209,14 @@
     <span class="pill" id="pill-complete">… complete</span>
     <span class="pill" id="pill-channel">channel: …</span>
     <span class="pill quota-pill" id="pill-quota" title="Click for details">quota: …</span>
+    <button id="gear-btn" class="gear-btn" title="Features &amp; settings" aria-label="Settings">⚙</button>
   </div>
 </header>
+<div id="settings-backdrop" class="settings-backdrop"></div>
 <main>
   <section>
     <div id="stack-zone"></div>
     <div id="quota-zone" class="quota-zone"></div>
-    <div id="features-panel" class="features-panel"></div>
     <div class="toolbar">
       <button id="btn-talk-all" class="primary">🎙 Talk to ALL units (voice)</button>
       <button id="btn-status-check">📊 Status check</button>
@@ -218,6 +231,7 @@
     <div id="log" class="log"></div>
   </section>
 </main>
+<div id="features-panel" class="features-panel settings-pop"></div>
 <script>
 const $ = sel => document.querySelector(sel);
 let state = null;
@@ -650,6 +664,19 @@ $('#btn-talk-all').dataset.action = 'voice_to_all';
 $('#btn-status-check').dataset.action = 'status_check';
 $('#btn-mute-channel').dataset.action = 'toggle_channel_mute';
 $('#btn-mute-all-units').dataset.action = 'toggle_mute_all_units';
+
+// ---- settings gear: toggle the features popover ----
+function setSettingsOpen(open) {
+  $('#features-panel').classList.toggle('open', open);
+  $('#settings-backdrop').classList.toggle('open', open);
+  $('#gear-btn').classList.toggle('open', open);
+}
+$('#gear-btn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  setSettingsOpen(!$('#features-panel').classList.contains('open'));
+});
+$('#settings-backdrop').addEventListener('click', () => setSettingsOpen(false));
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') setSettingsOpen(false); });
 
 setInterval(refresh, 1000);
 refresh();
