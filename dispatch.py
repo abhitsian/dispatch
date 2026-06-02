@@ -114,6 +114,8 @@ class ChannelState:
 
 
 class Dispatch:
+    OFFLOAD_NUDGE_COOLDOWN_SEC = 180   # min gap between offload nudges per session
+
     def __init__(self, on_change=None):
         self.state = ChannelState()
         # on_change is intentionally a no-op by default. The UI polls state via
@@ -123,6 +125,8 @@ class Dispatch:
         self._lock = threading.Lock()
         self._roster: dict[str, Agent] = {}
         self._roster_ts: float = 0.0
+        # M3b proactive offload nudge — per-session last-nudge timestamp.
+        self._offload_nudge_at: dict[str, float] = {}
 
         # Seed the in-memory log from the on-disk channel.log so the dashboard
         # and menu show recent history right after a restart (not blank).
@@ -726,31 +730,24 @@ class Dispatch:
         return decision
 
     def handle_user_prompt(self, session_id: str, prompt: str) -> dict:
-        """M3b: UserPromptSubmit hook entry.
+        """M3b: UserPromptSubmit hook entry — PROACTIVE OFFLOAD NUDGE.
 
-        Classifies the user's prompt and, when routing applies, returns
-        hookSpecificOutput.additionalContext that hints Opus to delegate
-        to a Task sub-agent on a cheaper model. PreToolUse (M3a) catches
-        the resulting Task call and does the actual model swap — this just
-        nudges Opus to spawn the delegation.
+        Runs the offload recommender on every prompt. When a prompt is a STRONG
+        offload candidate (mechanical + self-contained + worthwhile volume),
+        returns additionalContext telling Claude to surface a single one-line
+        tip to the user. The user decides — we never auto-delegate (the old
+        "hint Opus to spawn a Task" behavior was ignored and saved $0).
 
-        Returns an empty dict to pass through unchanged.
+        Gated to strong candidates + a short per-session cooldown so it nudges
+        when it's genuinely worth it, not on every mechanical line. Returns {}
+        to pass through unchanged.
         """
         try:
-            import quota, routing
+            import quota, offload
         except Exception as exc:
             self._add("DISPATCH", f"[m3b] import error: {exc}")
             return {}
-        config = quota.tracker().config
-        # We don't actually know the current model from the hook payload —
-        # assume Opus (the default for new Claude Code sessions). The
-        # downgrade-only safety guard handles the case where the unit is
-        # already on Sonnet/Haiku (no further downgrade possible).
-        current_model = "claude-opus-4-7"
-        routing_dec = routing.route_prompt(
-            session_id, prompt, current_model, config,
-        )
-        # Figure out callsign for the channel log.
+
         roster = self.roster()
         agent = next(
             (a for a in roster.values() if a.session_id == session_id),
@@ -758,30 +755,37 @@ class Dispatch:
         )
         callsign = agent.callsign if agent else f"PID-{session_id[:8]}"
 
-        if not routing_dec.apply:
-            if routing_dec.classifier_stage != "off":
-                tag = ("shadow" if routing_dec.mode == "shadow"
-                       else routing_dec.mode)
-                self._add(callsign, (
-                    f"[m3b/{tag}] prompt→{routing_dec.recommended_model} "
-                    f"(conf {routing_dec.confidence:.2f}, {routing_dec.reason})"
-                ))
+        rec = offload.recommend(prompt)
+        # Only nudge on a STRONG offload (skip 'offload-marginal' and 'keep' —
+        # those aren't worth interrupting for).
+        if rec["verdict"] != "offload":
             return {}
 
-        # Auto modes — emit additionalContext nudging delegation.
-        saved_pct = int((1 - routing_dec.cost_ratio) * 100)
-        self._add(callsign, (
-            f"[m3b/auto] prompt→{routing_dec.recommended_model} "
-            f"(conf {routing_dec.confidence:.2f}, save ~{saved_pct}%)"
-        ))
+        # Per-session cooldown so a burst of mechanical prompts doesn't nag.
+        now = time.time()
+        last = self._offload_nudge_at.get(session_id, 0)
+        if now - last < self.OFFLOAD_NUDGE_COOLDOWN_SEC:
+            return {}
+
+        # Respect the m3b prompt_mode: 'off'/'shadow' → log only, don't surface.
+        mode = quota.tracker().config.get("routing", {}).get("prompt_mode", "off")
+        model_short = rec["model"].split("-")[1].title()
+        save = rec["est_savings_pct"]
+        if mode in ("off", "shadow"):
+            self._add(callsign,
+                      f"[m3b/shadow] offloadable → {model_short} (~{save}%, {rec['why']})")
+            return {}
+
+        self._offload_nudge_at[session_id] = now
+        self._add(callsign, f"[m3b] offload nudge → {model_short} (~{save}%)")
+        tip = (f"_💡 Dispatch: this looks offloadable → {model_short} "
+               f"(~{save}% cheaper than Opus). Run `/offload-check` to confirm, or ignore._")
         additional_context = (
-            f"[Dispatch routing] The user's prompt has been classified as: "
-            f"{routing_dec.reason}. "
-            f"Recommended handling: spawn a Task sub-agent with "
-            f"model=\"{routing_dec.recommended_model}\" and pass the user's "
-            f"request through. Estimated {saved_pct}% cost reduction. "
-            f"This routing is advisory — if the prompt actually requires "
-            f"Opus's reasoning depth, you may keep the work in-session."
+            f"[Dispatch offload recommender] The user's task is a strong "
+            f"candidate to run on a cheaper model ({model_short}): {rec['why']}. "
+            f"Begin your reply with EXACTLY this one italic line, then answer "
+            f"the request normally:\n{tip}\n"
+            f"Do not add any other commentary about offloading or model choice."
         )
         return {
             "hookSpecificOutput": {
