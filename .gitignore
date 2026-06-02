@@ -24,3 +24,8 @@ Dispatch.iconset/
 *.swp
 .idea/
 .vscode/
+
+# Mined real user prompts — private, never publish
+evals/mined_prompts.jsonl
+evals/*mined*.jsonl
+evals/offload_cases_real*.jsonl
