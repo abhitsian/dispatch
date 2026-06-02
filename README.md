@@ -4,6 +4,10 @@ A menu-bar app that turns every live Claude Code session into a unit on a
 shared radio channel. Talk to them by voice, gate their tool calls with one
 click, and see what's pending across all your terminals from a single icon.
 
+It also keeps you honest about token spend: a passive meter for what each
+session is burning, an advisory recommender for when a task could run on a
+cheaper model, and a measured read on what that actually saved.
+
 ![Dispatch icon](Dispatch.png)
 
 ## What it does
@@ -29,6 +33,34 @@ click, and see what's pending across all your terminals from a single icon.
   HTTP server on `127.0.0.1:8765`) for visual review — pending asks,
   channel log, per-unit cards with grant / deny / reply / elevate / mute.
 
+## Token-cost awareness
+
+Running several Opus sessions in parallel, you're blind to spend until you
+hit a wall. Dispatch surfaces it — without crying wolf:
+
+- **Passive token meter.** Reads usage straight from Claude Code's own
+  `~/.claude/projects/*.jsonl` (deduped by message id — those logs repeat each
+  message across lines, which inflates naive counts ~2.4x), and shows a
+  glanceable 5h + 7d burn gauge. **No alarms, no gating** — an earlier
+  tier-alert/enforcement layer was removed because it acted on a guessed
+  number. The ceiling is an **estimate** (Anthropic publishes limits in hours,
+  not tokens) and is labeled as such; it self-corrects if you actually hit a
+  wall.
+- **Offload recommender** (`/offload-check`). Scores a task on the three axes
+  that decide whether handing it to a cheaper-model sub-agent actually saves —
+  reasoning level, volume, and whether it's self-contained (a cheap model on
+  cold context can cost *more* than Opus on cached context). Surfaced inline as
+  you type, or on demand. **It recommends; you decide** — it never auto-reroutes
+  your work.
+- **Measured savings** (`/savings`). Reads the actual per-message model from
+  the logs and reports real dollars saved by cheaper-model work vs an all-Opus
+  baseline — measured, not assumed, so you know whether any of it is working.
+
+> Honest note: for continuous, judgment-heavy work (the bulk of real usage)
+> almost everything wants the best model — the recommender will mostly say
+> *keep*. The real payoff is **bulk, self-contained generation** (many
+> artifacts from a template, summarizing a corpus), where cheap sub-agents win.
+
 ## Install
 
 Requires macOS 13+ on Apple Silicon (Intel may work; not tested),
@@ -47,11 +79,13 @@ git clone https://github.com/abhitsian/dispatch.git
 cd dispatch
 python3.13 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-.venv/bin/python make_icon.py
-.venv/bin/python -c "import sys; sys.setrecursionlimit(8000); import setuptools; sys.argv=['setup.py','py2app']; exec(open('setup.py').read())"
-cp -R dist/Dispatch.app /Applications/
+./make_app.sh
 open /Applications/Dispatch.app
 ```
+
+`make_app.sh` builds a thin `/Applications/Dispatch.app` that runs *this clone*
+directly — so updating is just `git pull`, no rebuild. Re-run it only if the
+launcher or icon changes.
 
 The first launch will prompt for **Microphone** and **Automation** permissions
 (System Settings → Privacy & Security). Grant both — the mic for voice transmit,
@@ -129,9 +163,13 @@ dashboard window).
 | `terminal_inject.py` | AppleScript injection into iTerm/Terminal — finds the tab matching the session's tty |
 | `allowlist.py` | Mirrors Claude's `permissions.allow` resolution so dispatch doesn't over-prompt |
 | `hooks/pretooluse.sh` | Tiny curl wrapper. If dispatch is down, exits 0 → Claude shows its own prompt (fail-open) |
-| `install_hook.py` | Adds/removes the `PreToolUse` entry in `~/.claude/settings.local.json` |
+| `install_hook.py` | Adds/removes the `PreToolUse` + `UserPromptSubmit` entries in `~/.claude/settings.local.json` |
 | `native_window.py` | NSWindow + WKWebView host for the dashboard |
-| `app.py` | rumps menu bar, mic recorder, main-thread UI refresh, notifications |
+| `app.py` | rumps menu bar, mic recorder, main-thread UI refresh, notifications, Dock-reopen → window |
+| `quota.py` | Passive token meter — parses `projects/*.jsonl` usage (deduped by message id), cost-weighted 5h/7d windows vs estimated ceilings |
+| `classifier.py` / `routing.py` | Heuristic task classifier + routing policy (downgrade-only, confidence floor, cooldown) for sub-agent model selection |
+| `offload.py` | Offload recommender — scores reasoning / volume / self-contained; advisory only, never executes |
+| `savings.py` | Measured $ saved by cheaper-model usage vs all-Opus, from the real per-message model in the logs |
 
 ## Privacy + safety
 

@@ -272,7 +272,7 @@
     <div class="hero-text">
       <div class="eyebrow">macOS · MIT · Open source</div>
       <h1 class="headline">One channel for every <span class="accent">Claude Code</span> session you're running.</h1>
-      <p class="lede">If you run multiple Claude Code sessions in parallel, you're alt-tabbing between terminals to answer permission prompts and clicking into specific terminals to type. <b>Dispatch puts all of it on one shared radio channel.</b> Every live session shows up as a numbered unit. Tool-call approvals stack into one menu. Voice transmits get typed straight into the right terminal.</p>
+      <p class="lede">If you run multiple Claude Code sessions in parallel, you're alt-tabbing between terminals to answer permission prompts and clicking into specific terminals to type. <b>Dispatch puts all of it on one shared radio channel.</b> Every live session shows up as a numbered unit. Tool-call approvals stack into one menu. Voice transmits get typed straight into the right terminal. <b>And it keeps you honest about token spend</b> — a passive burn meter and an advisory recommender for when a task could run on a cheaper model.</p>
       <div class="cta-row">
         <a href="#install" class="btn btn-primary">Install Dispatch ↓</a>
         <a href="https://github.com/abhitsian/dispatch" target="_blank" rel="noopener" class="btn btn-ghost">View on GitHub →</a>
@@ -316,6 +316,27 @@
         <p>A real Mac window (WKWebView) with cards for every unit — preview, allow/deny, mute, elevate, copy session id. Works alongside the menu bar.</p>
       </div>
     </div>
+  </section>
+
+  <!-- TOKEN-COST AWARENESS -->
+  <section class="section">
+    <h2>Know what you're burning</h2>
+    <p class="sub">Running several Opus sessions at once, you're blind to token spend until you hit a wall. Dispatch surfaces it — without crying wolf.</p>
+    <div class="features">
+      <div class="feature">
+        <h3><span class="ic">📈</span> Passive token meter</h3>
+        <p>Reads usage straight from Claude Code's own logs (deduped by message id — the raw logs over-count ~2.4×) and shows a glanceable 5h + 7d burn gauge. <b>No alarms, no gating.</b> The ceiling is an honest <em>estimate</em> — Anthropic publishes limits in hours, not tokens — labeled as such, and it self-corrects if you ever hit a real wall.</p>
+      </div>
+      <div class="feature">
+        <h3><span class="ic">💡</span> Offload recommender</h3>
+        <p><code>/offload-check</code> scores a task on what actually decides the savings — reasoning level, volume, and whether it's self-contained (a cheap model on cold context can cost <em>more</em> than Opus on cached). Surfaced inline as you type, or on demand. <b>It recommends; you decide</b> — it never reroutes your work behind your back.</p>
+      </div>
+      <div class="feature">
+        <h3><span class="ic">🧾</span> Measured savings</h3>
+        <p><code>/savings</code> reads the actual per-message model from your logs and reports real dollars saved by cheaper-model work vs an all-Opus baseline. <b>Measured, not assumed</b> — so you know whether any of it is actually working, instead of trusting a feature that claims it is.</p>
+      </div>
+    </div>
+    <p class="sub" style="margin-top:18px">Honest note: most judgment-heavy work wants the best model — the recommender will usually say <em>keep</em>. The real payoff is bulk, self-contained generation (many artifacts from a template, summarizing a corpus), where cheap sub-agents win.</p>
   </section>
 
   <!-- INSTALL -->
