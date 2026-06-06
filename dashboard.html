@@ -391,10 +391,11 @@ function renderQuotaCard(q) {
   const root = $('#quota-zone');
   if (!q || q.error) { root.innerHTML = ''; return; }
   const band = q.tier || 'normal';
-  // Passive meter: surface the card only when usage is elevated — quiet when
-  // fine. No banner, no alarm labels, no enforcement (M2 removed). The bands
-  // are color only; the ceiling is an estimate.
-  if (band === 'normal') { root.innerHTML = ''; return; }
+  // Always-on meter: the card shows at every tier (including normal), so you can
+  // glance at your burn whenever the dashboard is open. The bands are color
+  // only; the ceiling is an estimate. (Was hidden below the nudge tier — but on
+  // multi-display setups the menu-bar pill is unreachable, so the dashboard is
+  // the only place this shows.)
 
   const p5 = Math.min(100, Math.round((q.pct_5h || 0) * 100));
   const p7 = Math.min(100, Math.round((q.pct_7d || 0) * 100));
