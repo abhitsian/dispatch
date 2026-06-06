@@ -30,6 +30,23 @@ os.environ["PATH"] = _DEFAULT_PATH + ":" + os.environ.get("PATH", "")
 os.environ.setdefault("LANG", "en_US.UTF-8")
 os.environ.setdefault("LC_ALL", "en_US.UTF-8")
 
+# The bundle launcher execs Homebrew's python, so macOS resolves the main bundle
+# to Python.app — the Dock, ⌘-Tab, the frontmost-app menu, and System Events all
+# label us "Python". Override the main bundle's info dictionary BEFORE AppKit is
+# imported (rumps pulls in NSApplication below), so every surface reads "Dispatch"
+# instead. Pure-runtime fix — keeps the thin-launcher / `git pull` build model.
+try:
+    from Foundation import NSBundle
+    _bundle = NSBundle.mainBundle()
+    if _bundle is not None:
+        _info = _bundle.localizedInfoDictionary() or _bundle.infoDictionary()
+        if _info is not None:
+            _info["CFBundleName"] = "Dispatch"
+            _info["CFBundleDisplayName"] = "Dispatch"
+            _info["CFBundleIdentifier"] = "com.vaibhav.dispatch"
+except Exception:
+    pass
+
 import rumps
 
 from audio import CHANNEL, Recorder, transcribe
