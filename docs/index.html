@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dispatch — a walkie-talkie for your Claude Code sessions</title>
-<meta property="og:title" content="Dispatch — a walkie-talkie for your Claude Code sessions">
+<title>Dispatch — mission control for parallel Claude Code sessions</title>
+<meta property="og:title" content="Dispatch — mission control for parallel Claude Code sessions">
 <meta property="og:description" content="One control channel for every parallel Claude Code session — stacked permissions, voice transmit into the right terminal, and a passive token-burn meter so you see the weekly cap before you hit it.">
 <meta property="og:image" content="dispatch-icon.png">
 <link rel="icon" href="dispatch-icon.png">
@@ -245,7 +245,7 @@
       <img src="dispatch-icon.png" alt="Dispatch">
       <div>
         <div class="brand-name">Dispatch</div>
-        <div class="brand-tag">walkie-talkie for your Claude Code sessions</div>
+        <div class="brand-tag">mission control for parallel Claude Code sessions</div>
       </div>
     </div>
     <div class="top-cta">
@@ -271,8 +271,8 @@
     </div>
     <div class="hero-text">
       <div class="eyebrow">macOS · MIT · Open source</div>
-      <h1 class="headline">Run every <span class="accent">Claude Code</span> session from one channel — and see what each one burns.</h1>
-      <p class="lede">Run several Claude Code sessions in parallel and two things slip away: which one needs you, and how fast you're spending your token budget. <b>Dispatch puts both on one radio channel.</b> Every live session is a numbered unit — tool-call approvals stack into one menu, voice transmits type straight into the right terminal, and a channel log shows what each unit is doing. <b>A passive meter tracks your 5h and weekly burn</b> so you see the cap coming, with an advisory recommender for tasks that could run on a cheaper model.</p>
+      <h1 class="headline">Run every <span class="accent">Claude Code</span> session from one channel — and hold the token budget while you're at it.</h1>
+      <p class="lede">Run several Claude Code sessions in parallel and two things slip out of your hands: <b>which session needs you, and how fast you're burning your token budget.</b> Dispatch is built to hold both. Every live session becomes a numbered unit on one channel — approvals stack into a single menu, voice transmits type into the right terminal, completions surface the moment they land. And a passive meter keeps your 5-hour and weekly burn in front of you, so you see the cap coming instead of slamming into it mid-task.</p>
       <div class="cta-row">
         <a href="#install" class="btn btn-primary">Install Dispatch ↓</a>
         <a href="https://github.com/abhitsian/dispatch" target="_blank" rel="noopener" class="btn btn-ghost">View on GitHub →</a>
@@ -286,10 +286,10 @@
     <audio controls preload="metadata" src="dispatch-sample.mp3"></audio>
   </div>
 
-  <!-- WHAT IT DOES -->
+  <!-- PILLAR 1 — COORDINATION -->
   <section class="section">
-    <h2>What it solves</h2>
-    <p class="sub">The two specific places where multiple parallel sessions break down.</p>
+    <h2>Keep track of the sessions</h2>
+    <p class="sub">Every parallel session on one channel, so you always know which one needs you — and can answer it without hunting for the terminal.</p>
     <div class="features">
       <div class="feature">
         <h3><span class="ic">📡</span> One queue for permissions</h3>
@@ -313,15 +313,15 @@
       </div>
       <div class="feature">
         <h3><span class="ic">🪟</span> Native dashboard window</h3>
-        <p>A real Mac window (WKWebView) with cards for every unit — preview, allow/deny, mute, elevate, copy session id. Works alongside the menu bar.</p>
+        <p>A real Mac window (WKWebView) with cards for every unit — preview, allow/deny, mute, elevate, copy session id. Summon it from anywhere with <code>⌥⌘D</code>, so it's reachable no matter which display you're on.</p>
       </div>
     </div>
   </section>
 
-  <!-- TOKEN-COST AWARENESS -->
+  <!-- PILLAR 2 — TOKEN BUDGET -->
   <section class="section">
-    <h2>Know what you're burning</h2>
-    <p class="sub">Running several Opus sessions at once, you're blind to token spend until you hit a wall. Dispatch surfaces it — without crying wolf.</p>
+    <h2>Keep track of the spend</h2>
+    <p class="sub">Every session burns your weekly cap, and Claude Code shows no meter — Anthropic exposes no quota API for Pro/Max. Dispatch keeps the burn in front of you, and tells you when to spend less.</p>
     <div class="features">
       <div class="feature">
         <h3><span class="ic">📈</span> Passive token meter</h3>
@@ -333,7 +333,7 @@
       </div>
       <div class="feature">
         <h3><span class="ic">🧾</span> Measured savings</h3>
-        <p><code>/savings</code> reads the actual per-message model from your logs and reports real dollars saved by cheaper-model work vs an all-Opus baseline. <b>Measured, not assumed</b> — so you know whether any of it is actually working, instead of trusting a feature that claims it is.</p>
+        <p><code>/savings</code> reads the actual per-message model from your logs and reports the real dollars saved by cheaper-model work against an all-Opus baseline. <b>The number comes from your own logs</b>, so you know whether the routing is actually working — the first time I ran it, it read $0, and that's what reshaped the feature.</p>
       </div>
     </div>
   </section>
