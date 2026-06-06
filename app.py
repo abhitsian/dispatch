@@ -129,7 +129,7 @@ class DispatchApp(rumps.App):
             "🎙  Talk to ALL units (voice)", callback=self.start_voice_all
         )
         self.show_window_item = rumps.MenuItem(
-            "🪟  Show dashboard window", callback=self.show_dashboard_window
+            "🪟  Show dashboard window  (⌥⌘D)", callback=self.show_dashboard_window
         )
         self.status_item = rumps.MenuItem(
             "📊  Status check", callback=self.status_check
@@ -841,6 +841,24 @@ def main():
     except Exception:
         threading.Thread(target=lambda: (time.sleep(1.5), _open_native_window()),
                           daemon=True).start()
+
+    # Global hotkey ⌥⌘D → toggle the dashboard window from anywhere. This is the
+    # reliable way in: it works on any display and sidesteps the multi-display
+    # status-item placement quirk that can hide the menu-bar icon entirely.
+    try:
+        import hotkey
+        def _toggle_dashboard():
+            try:
+                from native_window import toggle_window
+                toggle_window("http://127.0.0.1:8765/ui")
+            except Exception:
+                subprocess.Popen(["open", "http://127.0.0.1:8765/ui"])
+        if hotkey.register(_toggle_dashboard):
+            print("hotkey ⌥⌘D registered → toggle dashboard")
+        else:
+            print("hotkey ⌥⌘D registration rejected (combo may be taken)")
+    except Exception as exc:
+        print(f"hotkey unavailable: {exc}")
 
     CHANNEL.enqueue_tx(
         "Dispatch online. Scanning open units. Channel open, over.", "DISPATCH",

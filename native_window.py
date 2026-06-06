@@ -93,3 +93,19 @@ def reopen():
     if _URL is None:
         return
     open_window(_URL)
+
+
+def toggle_window(url: str):
+    """Show the window if hidden or not frontmost; hide it if it's already front.
+
+    Bound to the global hotkey. Must run on the main thread (the Carbon hot-key
+    handler already does). This is the display-proof way to reach Dispatch —
+    independent of the menu-bar status item, which macOS mis-places on some
+    multi-display setups.
+    """
+    app = NSApplication.sharedApplication()
+    if _WINDOW is not None and _WINDOW.isVisible() and app.isActive():
+        _WINDOW.orderOut_(None)
+        app.hide_(None)
+        return
+    open_window(url)
