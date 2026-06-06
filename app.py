@@ -220,8 +220,16 @@ class DispatchApp(rumps.App):
         # so it sets dispatch._voice_signal; we pick it up here on the main
         # thread (which is where the Recorder must be driven from).
         sig = self.dispatch.consume_voice_signal()
-        if sig and not self._busy_recording and not self.recorder.recording:
-            if sig == "ALL":
+        if sig and not self._busy_recording:
+            if self.recorder.recording:
+                # Second press from ANY voice button = stop & transcribe, whatever
+                # the current target is. The dashboard has no menu-bar toggle, so
+                # without this a recording started from the dashboard can never be
+                # stopped — it wedges in recording=True and every later click is
+                # dropped by the guard. (Menu-bar Stop is unreachable on the
+                # multi-display setup where the status item gets mis-placed.)
+                self.toggle_transmit(None)
+            elif sig == "ALL":
                 self.start_voice_all(None)
             else:
                 self._start_directed_reply(sig)
@@ -239,6 +247,17 @@ class DispatchApp(rumps.App):
             self._refresh_quota_label()
         self._fire_notifications_if_new()
         self._apply_title()
+
+        # Publish voice state so the dashboard window can show recording /
+        # transcribing feedback. The menu-bar icon pulse that used to signal this
+        # is invisible when the status item is hidden (multi-display), so the
+        # dashboard is now the primary place this state shows up.
+        self.dispatch.voice_state = {
+            "recording": self.recorder.recording,
+            "processing": self._processing,
+            "level": round(self.recorder.level(), 3),
+            "target": self._reply_target,
+        }
 
     def _compute_menu_signature(self) -> tuple:
         s = self.dispatch.state

@@ -60,6 +60,7 @@
            font-family: inherit; }
   button:hover { background: #232b3a; }
   button.primary { background: #1d3d70; border-color: #2a4f8a; }
+  button.recording { background: #6e1f22; border-color: #b5343a; animation: pulse 1s ease-in-out infinite; }
   button.danger { background: #5e2929; border-color: #7a3737; }
   button.ok { background: #1f4838; border-color: #2c5c48; }
   button.ghost { background: transparent; }
@@ -337,6 +338,25 @@ function renderHeader(s) {
   $('#btn-mute-all-units').classList.toggle('primary', allMuted);
   $('#btn-mute-channel').textContent = s.channel.muted ? '🔊 Unmute channel' : '🔇 Mute channel';
   $('#btn-mute-channel').classList.toggle('primary', s.channel.muted);
+
+  // Voice state — recording / transcribing feedback lives here now, since the
+  // menu-bar icon pulse is invisible when the status item is hidden.
+  const v = s.voice || {};
+  const talk = $('#btn-talk-all');
+  if (talk) {
+    if (v.processing) {
+      talk.textContent = '⏳ Transcribing…';
+      talk.classList.add('primary'); talk.classList.remove('recording');
+    } else if (v.recording) {
+      const tgt = (v.target && v.target !== 'ALL') ? ` → ${v.target}` : ' → ALL';
+      const bars = '▮'.repeat(1 + Math.round((v.level || 0) * 6));
+      talk.textContent = `■ Stop & send${tgt}   ${bars}`;
+      talk.classList.add('primary', 'recording');
+    } else {
+      talk.textContent = '🎙 Talk to ALL units (voice)';
+      talk.classList.remove('primary', 'recording');
+    }
+  }
 }
 
 function fmtTokens(n) {

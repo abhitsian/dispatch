@@ -297,10 +297,15 @@ def _build_state_snapshot() -> dict:
     except Exception:
         features_state = {"features": {}, "routing": {}, "valid_routing_modes": []}
 
+    voice = getattr(_DISPATCH, "voice_state", None) or {
+        "recording": False, "processing": False, "level": 0.0, "target": None,
+    }
+
     return {
         "roster": units,
         "log": log,
         "channel": channel,
+        "voice": voice,
         "alert_count": alert_count,
         "complete_count": len(s.completed),
         "permission_count": permission_count,
