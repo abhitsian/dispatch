@@ -321,19 +321,15 @@
   <!-- PILLAR 2 — TOKEN BUDGET -->
   <section class="section">
     <h2>Keep track of the spend</h2>
-    <p class="sub">Every session burns your weekly cap, and Claude Code shows no meter — Anthropic exposes no quota API for Pro/Max. Dispatch keeps the burn in front of you, and tells you when to spend less.</p>
+    <p class="sub">Every session burns your weekly cap, and Claude Code shows no meter — Anthropic exposes no quota API for Pro/Max. Dispatch keeps the burn in front of you.</p>
     <div class="features">
       <div class="feature">
         <h3><span class="ic">📈</span> Passive token meter</h3>
         <p>Reads usage straight from Claude Code's own logs (deduped by message id — the raw logs over-count ~2.4×) and shows a glanceable 5h + 7d burn gauge. <b>No alarms, no gating.</b> The ceiling is an honest <em>estimate</em> — Anthropic publishes limits in hours, not tokens — labeled as such, and it self-corrects if you ever hit a real wall.</p>
       </div>
       <div class="feature">
-        <h3><span class="ic">💡</span> Offload recommender</h3>
-        <p><code>/offload-check</code> scores a task on what actually decides the savings — reasoning level, volume, and whether it's self-contained (a cheap model on cold context can cost <em>more</em> than Opus on cached). Surfaced inline as you type, or on demand. <b>It recommends; you decide</b> — it never reroutes your work behind your back.</p>
-      </div>
-      <div class="feature">
-        <h3><span class="ic">🧾</span> Measured savings</h3>
-        <p><code>/savings</code> reads the actual per-message model from your logs and reports the real dollars saved by cheaper-model work against an all-Opus baseline. <b>The number comes from your own logs</b>, so you know whether the routing is actually working — the first time I ran it, it read $0, and that's what reshaped the feature.</p>
+        <h3><span class="ic">🔕</span> Quiet by design</h3>
+        <p>An earlier version warned in tiers and gated tool calls when you neared the cap — it fired a false alarm off a guessed ceiling, so it's gone. The meter shows you the number and stays out of your way. You decide what to do with it.</p>
       </div>
     </div>
   </section>
