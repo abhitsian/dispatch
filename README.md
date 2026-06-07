@@ -24,10 +24,10 @@ Dispatch collapses them into one surface so you can stop.
 
 ## Design principles
 
-- **One pane of glass.** Every session on a single surface, not one terminal per agent.
-- **Calm technology** (Weiser & Brown). Status lives in your menu bar and moves to the center of attention only when something needs you. You glance, you don't poll.
+- **One place for all of them.** Every session on a single surface, not one terminal per agent.
+- **Quiet until it matters.** Status lives in your menu bar and moves to the center only when something needs you. You glance, you don't poll.
 - **Batch the interruptions.** Permissions queue into one menu with Allow All, instead of each session interrupting you on its own.
-- **Recognition over recall** (Nielsen). Each session is a labeled, numbered unit, so you know what's asking without remembering which window it was.
+- **Labelled, not remembered.** Each session is a numbered unit tagged with what it's working on, so you know what's asking without digging for the right window.
 - **Inform, don't alarm.** The meter shows the number and stays quiet. No false urgency, no gating (an earlier tier-alert layer was removed for firing off a guess).
 - **Lower the cost of input.** Voice is first-class, so instructing a session doesn't drag you back to the keyboard.
 
