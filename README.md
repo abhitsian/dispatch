@@ -10,6 +10,27 @@ cheaper model, and a measured read on what that actually saved.
 
 ![Dispatch icon](Dispatch.png)
 
+## Why it exists
+
+As Claude Code and Codex become the main surface for deep knowledge work,
+more people run not one agent but several at once, often for hours. The moment
+that happens the bottleneck stops being the model and becomes you: you alt-tab
+to find which session needs you, and you have no idea what you've spent until
+you hit the wall. Native remote control doesn't fix this. It just lets you
+carry the context-switching around with you. The problem was never *where* you
+reach the sessions from, it's having to hold all of them in your head at once.
+
+Dispatch collapses them into one surface so you can stop.
+
+## Design principles
+
+- **One pane of glass.** Every session on a single surface, not one terminal per agent.
+- **Calm technology** (Weiser & Brown). Status lives in your menu bar and moves to the center of attention only when something needs you. You glance, you don't poll.
+- **Batch the interruptions.** Permissions queue into one menu with Allow All, instead of each session interrupting you on its own.
+- **Recognition over recall** (Nielsen). Each session is a labeled, numbered unit, so you know what's asking without remembering which window it was.
+- **Inform, don't alarm.** The meter shows the number and stays quiet. No false urgency, no gating (an earlier tier-alert layer was removed for firing off a guess).
+- **Lower the cost of input.** Voice is first-class, so instructing a session doesn't drag you back to the keyboard.
+
 ## What it does
 
 - **Discovers your live `claude` sessions** by reading
