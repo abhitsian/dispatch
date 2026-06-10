@@ -756,6 +756,59 @@ class Dispatch:
         callsign = agent.callsign if agent else f"PID-{session_id[:8]}"
 
         rec = offload.recommend(prompt)
+
+        # M4: escalation nudge (UPWARD to Fable) — runs on the prompts the
+        # offload path ignores (heavyweight 'keep' work). Suggest-only: we never
+        # switch the live session model; we surface a tip and you decide. The
+        # regex is a free fast-path on every prompt; the LLM judge only fires on
+        # a heavyweight prompt AND at most once per cooldown per session, so it
+        # never taxes everyday typing.
+        try:
+            ecfg = quota.tracker().config.get("escalation", {})
+            emode = ecfg.get("mode", "off")
+            if quota.feature_enabled("m4_escalation") and emode in ("shadow", "suggest"):
+                from classifier import escalation_signal
+                esc = escalation_signal(prompt)  # stage 1: regex, free
+                heavyweight = (rec["verdict"] == "keep"
+                               and rec["axes"]["reasoning"]["level"] == "complex")
+                gate_ok = (ecfg.get("gate", "complex_only") != "complex_only") or heavyweight
+                if not hasattr(self, "_escalation_nudge_at"):
+                    self._escalation_nudge_at = {}
+                now = time.time()
+                last = self._escalation_nudge_at.get(session_id, 0)
+                cd = int(ecfg.get("cooldown_sec", 900))
+                in_cooldown = (emode != "shadow") and (now - last) < cd
+                # Pay for the judge only when the cheap gates already pass.
+                if esc is None and ecfg.get("use_judge", True) and gate_ok and not in_cooldown:
+                    esc = escalation_signal(
+                        prompt, use_judge=True,
+                        judge_model=ecfg.get("judge_model") or None)
+                if esc is not None:
+                    if emode == "shadow":
+                        self._add(callsign, f"[m4/shadow] escalate→Fable ({esc.reason})")
+                    elif in_cooldown:
+                        self._add(callsign, f"[m4/cooldown] escalate→Fable ({esc.reason})")
+                    else:
+                        self._escalation_nudge_at[session_id] = now
+                        self._add(callsign, f"[m4] escalate nudge → Fable ({esc.reason})")
+                        tip = (f"_↑ Dispatch: this looks Fable-worthy ({esc.reason}). "
+                               f"If you want the higher ceiling, re-run on `/model claude-fable-5` "
+                               f"— Opus is otherwise fine._")
+                        return {
+                            "hookSpecificOutput": {
+                                "hookEventName": "UserPromptSubmit",
+                                "additionalContext": (
+                                    f"[Dispatch escalation recommender] This prompt may be "
+                                    f"worth the higher-ceiling model Fable 5: {esc.reason}. "
+                                    f"Begin your reply with EXACTLY this one italic line, then "
+                                    f"answer the request normally on the current model:\n{tip}\n"
+                                    f"Do not add other commentary about model choice."
+                                ),
+                            }
+                        }
+        except Exception as exc:
+            self._add("DISPATCH", f"[m4] escalation error: {exc}")
+
         # Only nudge on a STRONG offload (skip 'offload-marginal' and 'keep' —
         # those aren't worth interrupting for).
         if rec["verdict"] != "offload":

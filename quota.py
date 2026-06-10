@@ -77,6 +77,7 @@ DEFAULT_CONFIG = {
         "m1_quota_meter": True,        # Scanning, pill, gauge, /state quota field
         "m3a_subagent_router": False,  # Rewrite Task model via PreToolUse updatedInput
         "m3b_prompt_router": False,    # UserPromptSubmit hint to delegate to cheaper model
+        "m4_escalation": True,         # UserPromptSubmit nudge to ESCALATE up to Fable
     },
     # Routing controls — apply when m3a / m3b features are on.
     "routing": {
@@ -90,6 +91,18 @@ DEFAULT_CONFIG = {
             "extract", "summarize", "classify", "lookup",
         ],
         "haiku_classifier_enabled": False,  # use heuristics only until you trust
+    },
+    # Escalation (UPWARD) — the inverse of routing/offload. Fable is a tier above
+    # Opus (~2x), so this is a quality lever, not a savings one. It can only
+    # SUGGEST: Dispatch never switches your live session model (Claude Code hooks
+    # can't, and by design that choice is yours — set Fable with `/model`). The
+    # LLM judge (judge.py) decides per-prompt; the regex is just a free fast-path.
+    "escalation": {
+        "mode": "suggest",          # off | shadow (log only) | suggest (surface a tip)
+        "use_judge": True,          # consult the LLM judge when the regex is silent
+        "judge_model": "",          # blank = judge.JUDGE_MODEL (Sonnet)
+        "gate": "complex_only",     # complex_only (heavyweight prompts) | always
+        "cooldown_sec": 900,        # judge + nudge at most once per window per session
     },
 }
 

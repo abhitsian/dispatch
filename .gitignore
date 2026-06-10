@@ -29,3 +29,6 @@ Dispatch.iconset/
 evals/mined_prompts.jsonl
 evals/*mined*.jsonl
 evals/offload_cases_real*.jsonl
+
+# Judge cache — derived from private prompts (reason strings can echo them)
+evals/.judge_cache.json

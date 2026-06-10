@@ -20,7 +20,7 @@ from __future__ import annotations
 import re
 import sys
 
-from classifier import classify, OPUS, SONNET, HAIKU
+from classifier import classify, escalation_signal, OPUS, SONNET, HAIKU, FABLE
 
 # Savings vs Opus for a fully-offloaded task (rough list-price ratios).
 _FULL_SAVE = {HAIKU: 92, SONNET: 80, OPUS: 0}
@@ -82,7 +82,7 @@ def _self_contained_axis(task: str):
     return "unclear", None
 
 
-def recommend(task: str) -> dict:
+def recommend(task: str, *, use_judge: bool = False) -> dict:
     rlevel, rreason, model, offloadable = _reasoning_axis(task)
     vlevel, v_ok = _volume_axis(task)
     slevel, s_ok = _self_contained_axis(task)
@@ -110,6 +110,21 @@ def recommend(task: str) -> dict:
 
     full = _FULL_SAVE[model]
     est = full if verdict == "offload" else (full // 2 if verdict == "offload-marginal" else 0)
+
+    # Upward axis — independent of the downgrade verdict. A task can be "keep on
+    # Opus" for offload AND a candidate to escalate to Fable. Advisory only; this
+    # does not change `verdict` or `model` (those stay downgrade-framed).
+    # use_judge=True adds the LLM stage-2 (intent-aware); default off keeps bulk
+    # callers (mine_prompts loop, offload_eval) fast and free.
+    esc = escalation_signal(task, use_judge=use_judge)
+    escalate = None
+    if esc is not None:
+        escalate = {
+            "model": esc.recommended_model,
+            "confidence": esc.confidence,
+            "reason": esc.reason,
+        }
+
     return {
         "task": task,
         "verdict": verdict,
@@ -122,6 +137,7 @@ def recommend(task: str) -> dict:
         },
         "why": why,
         "caveats": caveats,
+        "escalate": escalate,
     }
 
 
@@ -146,17 +162,24 @@ def format_human(rec: dict) -> str:
     ]
     for c in rec["caveats"]:
         lines.append(f"  ⚠ {c}")
+    if rec.get("escalate"):
+        e = rec["escalate"]
+        lines.append(f"  ↑ escalation candidate → Fable ({e['reason']}) "
+                     f"— worth ~2x Opus only if this is genuinely high-stakes")
     return "\n".join(lines)
 
 
 if __name__ == "__main__":
-    task = " ".join(sys.argv[1:]).strip()
+    flags = {a for a in sys.argv[1:] if a.startswith("--")}
+    use_judge = "--judge" in flags          # consult the LLM judge (stage 2)
+    as_json = "--json" in flags
+    task = " ".join(a for a in sys.argv[1:] if not a.startswith("--")).strip()
     if not task:
-        print("usage: offload.py <task description>")
+        print("usage: offload.py [--judge] [--json] <task description>")
         sys.exit(1)
-    if "--json" in sys.argv:
+    rec = recommend(task, use_judge=use_judge)
+    if as_json:
         import json
-        task = " ".join(a for a in sys.argv[1:] if a != "--json").strip()
-        print(json.dumps(recommend(task), indent=2))
+        print(json.dumps(rec, indent=2))
     else:
-        print(format_human(recommend(task)))
+        print(format_human(rec))
