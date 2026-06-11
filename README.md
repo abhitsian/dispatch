@@ -4,9 +4,10 @@ A menu-bar app that turns every live Claude Code session into a unit on a
 shared radio channel. Talk to them by voice, gate their tool calls with one
 click, and see what's pending across all your terminals from a single icon.
 
-It also keeps you honest about token spend: a passive meter for what each
-session is burning, an advisory recommender for when a task could run on a
-cheaper model, and a measured read on what that actually saved.
+It also keeps you honest about token spend in both directions: a passive meter
+for what each session is burning, an advisory recommender for when a task could
+run on a cheaper model, a live nudge for the rare prompt worth escalating to a
+stronger one, and a measured read on what any of it actually saved.
 
 ![Dispatch icon](Dispatch.png)
 
@@ -73,14 +74,24 @@ hit a wall. Dispatch surfaces it — without crying wolf:
   cold context can cost *more* than Opus on cached context). Surfaced inline as
   you type, or on demand. **It recommends; you decide** — it never auto-reroutes
   your work.
+- **Escalation nudge** (M4). The inverse of offload. Claude Fable 5 sits a tier
+  above Opus, so for the rare prompt genuinely worth a higher ceiling —
+  irreversible calls, whole-system architecture, taste-critical output — Dispatch
+  flags it live and points you at `/model claude-fable-5`. An LLM judge makes the
+  call per-prompt, gated to heavyweight prompts and rate-limited so it never taxes
+  routine typing. **Suggest-only — it never switches your model; that stays your
+  call.**
 - **Measured savings** (`/savings`). Reads the actual per-message model from
   the logs and reports real dollars saved by cheaper-model work vs an all-Opus
   baseline — measured, not assumed, so you know whether any of it is working.
 
-> Honest note: for continuous, judgment-heavy work (the bulk of real usage)
-> almost everything wants the best model — the recommender will mostly say
-> *keep*. The real payoff is **bulk, self-contained generation** (many
-> artifacts from a template, summarizing a corpus), where cheap sub-agents win.
+> Honest note: I measured both directions before trusting either. For continuous,
+> judgment-heavy work — the bulk of real usage — almost everything wants the model
+> you're already on: the offload recommender mostly says *keep*, and even an
+> intent-aware judge flagged ~0% of real prompts as worth escalating. The payoff
+> is at the edges — **bulk, self-contained generation** downward (cheap sub-agents
+> win) and the **rare pivotal prompt** upward. Both stay recommendations you act
+> on, never automatic reroutes.
 
 ## Install
 
@@ -188,8 +199,9 @@ dashboard window).
 | `native_window.py` | NSWindow + WKWebView host for the dashboard |
 | `app.py` | rumps menu bar, mic recorder, main-thread UI refresh, notifications, Dock-reopen → window |
 | `quota.py` | Passive token meter — parses `projects/*.jsonl` usage (deduped by message id), cost-weighted 5h/7d windows vs estimated ceilings |
-| `classifier.py` / `routing.py` | Heuristic task classifier + routing policy (downgrade-only, confidence floor, cooldown) for sub-agent model selection |
-| `offload.py` | Offload recommender — scores reasoning / volume / self-contained; advisory only, never executes |
+| `classifier.py` / `routing.py` | Heuristic task classifier + routing policy (downgrade-only, confidence floor, cooldown) for sub-agent model selection; also the two-stage escalation signal (regex → judge) |
+| `offload.py` | Offload recommender — scores reasoning / volume / self-contained; advisory only, never executes. Bidirectional: also surfaces escalation candidates |
+| `judge.py` | LLM-as-judge for the escalation decision — Sonnet over `claude -p`, fail-closed; only the rare heavyweight prompt reaches it |
 | `savings.py` | Measured $ saved by cheaper-model usage vs all-Opus, from the real per-message model in the logs |
 
 ## Privacy + safety
