@@ -1,5 +1,7 @@
 # Dispatch
 
+**[🔗 Live site →](https://abhitsian.github.io/dispatch/)**
+
 A menu-bar app that turns every live Claude Code session into a unit on a
 shared radio channel. Talk to them by voice, gate their tool calls with one
 click, and see what's pending across all your terminals from a single icon.
